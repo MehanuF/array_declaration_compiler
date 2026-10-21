@@ -5,65 +5,103 @@
 
 This document demonstrates how the Context-Free Grammar (CFG) generates valid array-related statements.
 
-## 2. Derivation of an Array Declaration
+### 2. Derivation of an Array Declaration
 
-Input:
+**Input:**
 
-    int arr[5];
+```text
+int arr[5];
+```
 
-Leftmost derivation:
+**Leftmost derivation:**
 
-    Program
-    => StatementList
-    => Statement StatementList
-    => Declaration ; StatementList
-    => Type ID [ INT_LITERAL ] InitializerOpt ;
-    => int arr [ 5 ] epsilon ;
-    => int arr [ 5 ] ;
+```text
+Program
+=> StatementList
+=> Statement StatementList
+=> Declaration ; StatementList
+=> Type ID [ INT_LITERAL ] InitializerOpt ; StatementList
+=> int ID [ INT_LITERAL ] InitializerOpt ; StatementList
+=> int arr [ INT_LITERAL ] InitializerOpt ; StatementList
+=> int arr [ 5 ] InitializerOpt ; StatementList
+=> int arr [ 5 ] ; StatementList
+=> int arr [ 5 ] ;
+```
 
-Here, epsilon represents an empty production. It indicates that no initializer is provided.
+Here, `InitializerOpt` produces epsilon because no initializer is provided. The final `StatementList` also produces epsilon, indicating that there are no more statements.
 
 ## 3. Derivation of an Array Assignment
 
-Input:
+**Input:**
 
-    arr[2] = 50;
+```text
+arr[2] = 50;
+```
 
-Derivation:
+**Leftmost derivation:**
 
-    Program
-    => StatementList
-    => Statement StatementList
-    => Assignment ; StatementList
-    => LValue = Expression ;
-    => ID [ Expression ] = Expression ;
-    => arr [ 2 ] = 50 ;
+```text
+Program
+=> StatementList
+=> Statement StatementList
+=> Assignment ; StatementList
+=> LValue = Expression ; StatementList
+=> ID [ Expression ] = Expression ; StatementList
+=> ID [ Term ExpressionTail ] = Term ExpressionTail ; StatementList
+=> ID [ Factor TermTail ExpressionTail ] = Factor TermTail ExpressionTail ; StatementList
+=> ID [ INT_LITERAL TermTail ExpressionTail ] = INT_LITERAL TermTail ExpressionTail ; StatementList
+=> ID [ 2 TermTail ExpressionTail ] = 50 TermTail ExpressionTail ; StatementList
+=> ID [ 2 ExpressionTail ] = 50 ExpressionTail ; StatementList
+=> ID [ 2 ] = 50 ; StatementList
+=> arr [ 2 ] = 50 ; StatementList
+=> arr [ 2 ] = 50 ;
+```
 
-This demonstrates array indexing on the left-hand side and an integer expression on the right-hand side.
+Here, `LValue` represents the location being assigned to, `Expression` represents the value being assigned, and the final `StatementList` produces epsilon because there are no more statements.
+
 
 ## 4. Grammar Transformation: Removing Left Recursion
 
-A left-recursive expression rule can be written as:
+Left recursion occurs when a grammar rule refers to itself as the leftmost symbol in a production. For example, the original expression grammar can be written as:
 
-    Expression -> Expression + Term | Term
+```text
+Expression -> Expression + Term
+           | Expression - Term
+           | Term
+```
 
-This form is unsuitable for a basic predictive parser because Expression calls itself first.
+This form is unsuitable for a basic predictive parser because `Expression` calls itself first.
 
-An equivalent left-recursion-free form is:
+To remove left recursion, the grammar is transformed into:
 
-    Expression -> Term ExpressionTail
+```text
+Expression -> Term ExpressionTail
 
-    ExpressionTail -> + Term ExpressionTail
-                    | epsilon
+ExpressionTail -> + Term ExpressionTail
+                | - Term ExpressionTail
+                | epsilon
+```
 
-Similarly, multiplication can be represented as:
+Similarly, the original grammar for multiplication and division can be written as:
 
-    Term -> Factor TermTail
+```text
+Term -> Term * Factor
+      | Term / Factor
+      | Factor
+```
 
-    TermTail -> * Factor TermTail
-              | epsilon
+After removing left recursion, it becomes:
 
-These rules preserve the intended operator precedence while avoiding left recursion.
+```text
+Term -> Factor TermTail
+
+TermTail -> * Factor TermTail
+          | / Factor TermTail
+          | epsilon
+```
+
+These transformations remove left recursion from arithmetic expressions and make the grammar suitable for a basic predictive parser. They also preserve operator precedence: multiplication and division have higher precedence than addition and subtraction.
+
 
 ## 5. Left Factoring
 
