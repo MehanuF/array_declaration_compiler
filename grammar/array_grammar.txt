@@ -1,0 +1,97 @@
+
+ARRAY DECLARATION COMPILER
+MEMBER 1 - GRAMMAR DESIGNER
+
+1. TERMINALS
+
+TYPE       : int | float | char
+ID         : Identifier
+INT_LITERAL: Integer constant
+NUM        : Numeric constant
+=          : Assignment operator
+[ ]        : Array brackets
+{ }        : Initializer braces
+;          : Statement terminator
++ - * /    : Arithmetic operators
+( ) ,      : Parentheses and comma
+
+
+2. CONTEXT-FREE GRAMMAR (CFG)
+
+Program -> StatementList
+
+StatementList -> Statement StatementList
+               | epsilon
+
+Statement -> Declaration ;
+           | Assignment ;
+
+Declaration -> Type ID [ INT_LITERAL ] InitializerOpt
+
+Type -> int
+      | float
+      | char
+
+InitializerOpt -> = { InitializerList }
+                | epsilon
+
+InitializerList -> Expression InitializerTail
+
+InitializerTail -> , Expression InitializerTail
+                 | epsilon
+
+Assignment -> LValue = Expression
+
+LValue -> ID
+        | ID [ Expression ]
+
+Expression -> Term ExpressionTail
+
+ExpressionTail -> + Term ExpressionTail
+                | - Term ExpressionTail
+                | epsilon
+
+Term -> Factor TermTail
+
+TermTail -> * Factor TermTail
+          | / Factor TermTail
+          | epsilon
+
+Factor -> ID
+        | INT_LITERAL
+        | ( Expression )
+        | ID [ Expression ]
+
+
+3. SAMPLE VALID INPUTS
+
+int arr[5];
+int marks[3] = {10, 20, 30};
+arr[2] = 50;
+x = arr[2];
+int values[4] = {1 + 2, 5, 8, 10};
+
+
+4. GRAMMAR DESIGN NOTES
+
+1. The grammar supports array declarations, optional initialization,
+   array indexing, assignments and arithmetic expressions.
+
+2. Expression and Term separate addition/subtraction from
+   multiplication/division to establish operator precedence.
+
+3. The grammar uses repetition through StatementList and
+   InitializerTail to support multiple statements and initializer values.
+
+4. The expression grammar is designed to avoid ambiguity
+   involving arithmetic operator precedence and associativity.
+
+5. SEMANTIC CHECKS REQUIRED
+
+1. Check that an array is declared before it is accessed.
+2. Check that an index has an integer type.
+3. Check that an index is within the declared array bounds.
+4. Check that an array is not assigned an incompatible value.
+5. Check that initializer values follow the supported type rules.
+
+Note: These semantic checks are performed separately from CFG parsing.
