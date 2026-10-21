@@ -7,7 +7,6 @@ MEMBER 1 - GRAMMAR DESIGNER
 TYPE        -> int | float | char
 ID          -> Identifier
 INT_LITERAL -> Integer constant
-NUM         -> Numeric constant
 =           -> Assignment operator
 [ ]         -> Array brackets
 { }         -> Initializer braces
@@ -15,7 +14,6 @@ NUM         -> Numeric constant
 + - * /     -> Arithmetic operators
 ( )         -> Parentheses
 ,           -> Comma
-
 
 2. CONTEXT-FREE GRAMMAR (CFG)
 
