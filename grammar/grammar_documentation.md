@@ -25,27 +25,30 @@ arr[2] = 50;
 x = arr[2];
 ```
 
+
 ## 4. Sample Derivation
 
 Input:
 
-```c
-int arr[5];
-```
+`int arr[5];`
 
-Derivation using the CFG:
+Leftmost derivation:
 
 ```text
 Program
 => StatementList
 => Statement StatementList
 => Declaration ; StatementList
-=> Type ID [ INT_LITERAL ] InitializerOpt ;
-=> int arr [ 5 ] epsilon ;
+=> Type ID [ INT_LITERAL ] InitializerOpt ; StatementList
+=> int ID [ INT_LITERAL ] InitializerOpt ; StatementList
+=> int arr [ INT_LITERAL ] InitializerOpt ; StatementList
+=> int arr [ 5 ] InitializerOpt ; StatementList
+=> int arr [ 5 ] epsilon ; StatementList
 => int arr [ 5 ] ;
 ```
 
-Here, `epsilon` represents an empty production. It means that the array has no initializer.
+Here, `epsilon` represents an empty production. It indicates that no initializer is provided. The final `StatementList` is also empty.
+
 
 ## 5. Array Initialization
 
@@ -90,6 +93,31 @@ The grammar separates expressions and terms to give multiplication and division 
 The expression-tail and term-tail productions avoid left recursion in arithmetic expressions, making this structure suitable for predictive parsing.
 
 No additional left factoring is required for these expression productions.
+
+### Removing Left Recursion
+
+Original grammar:
+
+```text
+Expression -> Expression + Term
+            | Term
+```
+
+This grammar is left-recursive because `Expression` appears as the first symbol on the right-hand side of one of its own productions.
+
+Transformed grammar:
+
+```text
+Expression -> Term ExpressionTail
+
+ExpressionTail -> + Term ExpressionTail
+                | epsilon
+```
+
+The transformed grammar removes left recursion and is more suitable for predictive parsing.
+
+The same approach can be used for subtraction, multiplication, and division, as shown in the expression grammar above.
+
 
 ## 8. Semantic Checks
 
