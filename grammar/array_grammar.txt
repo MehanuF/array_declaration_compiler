@@ -2,21 +2,24 @@
 ARRAY DECLARATION COMPILER
 MEMBER 1 - GRAMMAR DESIGNER
 
-1. TERMINALS
+1. TERMINAL SYMBOLS
 
-TYPE       : int | float | char
-ID         : Identifier
-INT_LITERAL: Integer constant
-NUM        : Numeric constant
-=          : Assignment operator
-[ ]        : Array brackets
-{ }        : Initializer braces
-;          : Statement terminator
-+ - * /    : Arithmetic operators
-( ) ,      : Parentheses and comma
+TYPE        -> int | float | char
+ID          -> Identifier
+INT_LITERAL -> Integer constant
+NUM         -> Numeric constant
+=           -> Assignment operator
+[ ]         -> Array brackets
+{ }         -> Initializer braces
+;           -> Statement terminator
++ - * /     -> Arithmetic operators
+( )         -> Parentheses
+,           -> Comma
 
 
 2. CONTEXT-FREE GRAMMAR (CFG)
+
+Start Symbol: Program
 
 Program -> StatementList
 
@@ -58,7 +61,7 @@ TermTail -> * Factor TermTail
           | epsilon
 
 Factor -> ID
-        | INT_LITERAL
+        | NUM
         | ( Expression )
         | ID [ Expression ]
 
@@ -66,32 +69,44 @@ Factor -> ID
 3. SAMPLE VALID INPUTS
 
 int arr[5];
+
 int marks[3] = {10, 20, 30};
+
 arr[2] = 50;
+
 x = arr[2];
+
 int values[4] = {1 + 2, 5, 8, 10};
 
 
-4. GRAMMAR DESIGN NOTES
+4. GRAMMAR DESIGN
 
-1. The grammar supports array declarations, optional initialization,
-   array indexing, assignments and arithmetic expressions.
+1. StatementList supports multiple statements.
+2. InitializerOpt makes array initialization optional.
+3. InitializerTail supports comma-separated initializer values.
+4. Expression and Term establish operator precedence.
+5. The expression-tail rules avoid left recursion in arithmetic
+   expressions, making them suitable for a predictive parser.
+6. The grammar supports single-dimensional arrays.
 
-2. Expression and Term separate addition/subtraction from
-   multiplication/division to establish operator precedence.
 
-3. The grammar uses repetition through StatementList and
-   InitializerTail to support multiple statements and initializer values.
+5. SEMANTIC CHECKS
 
-4. The expression grammar is designed to avoid ambiguity
-   involving arithmetic operator precedence and associativity.
+The semantic analyzer must check:
 
-5. SEMANTIC CHECKS REQUIRED
+1. Whether an array is declared before use.
+2. Whether an array index has an integer type.
+3. Whether an index is within the declared bounds.
+4. Whether assigned values match the array element type.
+5. Whether the number of initializer values is compatible
+   with the declared array size.
 
-1. Check that an array is declared before it is accessed.
-2. Check that an index has an integer type.
-3. Check that an index is within the declared array bounds.
-4. Check that an array is not assigned an incompatible value.
-5. Check that initializer values follow the supported type rules.
 
-Note: These semantic checks are performed separately from CFG parsing.
+6. SCOPE AND LIMITATIONS
+
+The compiler supports a simplified C-like syntax for
+single-dimensional array declarations, initialization,
+indexing, assignments, and arithmetic expressions.
+
+Multidimensional arrays, pointers, functions, and advanced
+C language features are outside the current scope.
