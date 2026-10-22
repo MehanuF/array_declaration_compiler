@@ -1,0 +1,1 @@
+char letters[4];

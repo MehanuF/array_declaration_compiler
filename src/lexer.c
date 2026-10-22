@@ -1,242 +1,162 @@
+/*
+ * Array Declaration Compiler
+ * Member 2 — Lexical Analyzer (implementation)
+ *
+ * Converts a raw source string into a flat token array consumed by
+ * the recursive-descent parser.  Error recovery: on an unknown
+ * character the scanner emits TOK_INVALID and stops.
+ */
+
+#include <stdio.h>
+#include <ctype.h>
+#include <string.h>
 #include "lexer.h"
 
-#include <ctype.h>
-#include <stdlib.h>
-#include <string.h>
-
-typedef struct {
-    const char *source;
-    size_t current;
-    int line;
-    int column;
-    TokenArray *tokens;
-    CompilerError *error;
-} Lexer;
-
-static bool at_end(const Lexer *lexer) {
-    return lexer->source[lexer->current] == '\0';
-}
-
-static char peek(const Lexer *lexer) {
-    return lexer->source[lexer->current];
-}
-
-static char peek_next(const Lexer *lexer) {
-    if (at_end(lexer)) {
-        return '\0';
+/* ── tokenName ────────────────────────────────────────────────── */
+const char *tokenName(TokenType type) {
+    switch (type) {
+        case TOK_INT:         return "INT";
+        case TOK_FLOAT:       return "FLOAT";
+        case TOK_CHAR:        return "CHAR";
+        case TOK_ID:          return "ID";
+        case TOK_INT_LITERAL: return "INT_LITERAL";
+        case TOK_ASSIGN:      return "ASSIGN";
+        case TOK_LBRACKET:    return "LBRACKET";
+        case TOK_RBRACKET:    return "RBRACKET";
+        case TOK_LBRACE:      return "LBRACE";
+        case TOK_RBRACE:      return "RBRACE";
+        case TOK_SEMICOLON:   return "SEMICOLON";
+        case TOK_LPAREN:      return "LPAREN";
+        case TOK_RPAREN:      return "RPAREN";
+        case TOK_COMMA:       return "COMMA";
+        case TOK_PLUS:        return "PLUS";
+        case TOK_MINUS:       return "MINUS";
+        case TOK_MULTIPLY:    return "MULTIPLY";
+        case TOK_DIVIDE:      return "DIVIDE";
+        case TOK_EOF:         return "EOF";
+        default:              return "INVALID";
     }
-    return lexer->source[lexer->current + 1];
 }
 
-static char advance(Lexer *lexer) {
-    char character = lexer->source[lexer->current++];
-    if (character == '\n') {
-        lexer->line++;
-        lexer->column = 1;
-    } else {
-        lexer->column++;
-    }
-    return character;
+/* ── internal: keyword check ─────────────────────────────────── */
+static TokenType checkKeyword(const char *word) {
+    if (strcmp(word, "int")   == 0) return TOK_INT;
+    if (strcmp(word, "float") == 0) return TOK_FLOAT;
+    if (strcmp(word, "char")  == 0) return TOK_CHAR;
+    return TOK_ID;
 }
 
-static bool add_token(Lexer *lexer, TokenType type, size_t start,
-                      int line, int column) {
-    Token *larger;
-    Token token;
-    size_t length = lexer->current - start;
+/* ── internal: add one token to the output array ─────────────── */
+static int addToken(Token *tokens, int count, int maxTokens,
+                    TokenType type, const char *lexeme,
+                    int line, int col) {
+    if (count >= maxTokens) return count;
+    tokens[count].type   = type;
+    tokens[count].line   = line;
+    tokens[count].column = col;
+    strncpy(tokens[count].lexeme, lexeme, MAX_LEXEME - 1);
+    tokens[count].lexeme[MAX_LEXEME - 1] = '\0';
+    return count + 1;
+}
 
-    if (lexer->tokens->count == lexer->tokens->capacity) {
-        size_t capacity = lexer->tokens->capacity == 0 ? 16 : lexer->tokens->capacity * 2;
-        larger = realloc(lexer->tokens->items, capacity * sizeof(*larger));
-        if (larger == NULL) {
-            compiler_error_set(lexer->error, line, column, "out of memory while storing tokens");
-            return false;
+/* ── tokenize ─────────────────────────────────────────────────── */
+int tokenize(const char *source, Token *tokens, int maxTokens) {
+    int i      = 0;
+    int line   = 1;
+    int column = 1;
+    int count  = 0;
+
+    while (source[i] != '\0') {
+        char ch = source[i];
+
+        /* Skip whitespace */
+        if (isspace((unsigned char)ch)) {
+            if (ch == '\n') { line++; column = 1; }
+            else            { column++; }
+            i++;
+            continue;
         }
-        lexer->tokens->items = larger;
-        lexer->tokens->capacity = capacity;
-    }
 
-    token.type = type;
-    token.lexeme = compiler_string_slice(lexer->source, start, length);
-    token.line = line;
-    token.column = column;
-    if (token.lexeme == NULL) {
-        compiler_error_set(lexer->error, line, column, "out of memory while storing a token");
-        return false;
-    }
-    lexer->tokens->items[lexer->tokens->count++] = token;
-    return true;
-}
+        int startLine   = line;
+        int startColumn = column;
 
-static TokenType single_character_type(char character) {
-    switch (character) {
-        case '[': return TOKEN_LBRACKET;
-        case ']': return TOKEN_RBRACKET;
-        case '{': return TOKEN_LBRACE;
-        case '}': return TOKEN_RBRACE;
-        case '(': return TOKEN_LPAREN;
-        case ')': return TOKEN_RPAREN;
-        case ',': return TOKEN_COMMA;
-        case ';': return TOKEN_SEMICOLON;
-        case '=': return TOKEN_ASSIGN;
-        case '+': return TOKEN_PLUS;
-        case '-': return TOKEN_MINUS;
-        case '*': return TOKEN_STAR;
-        case '/': return TOKEN_SLASH;
-        case '%': return TOKEN_PERCENT;
-        default: return TOKEN_EOF;
-    }
-}
+        /* Identifiers and keywords */
+        if (isalpha((unsigned char)ch) || ch == '_') {
+            char word[MAX_LEXEME];
+            int  j = 0;
 
-static bool scan_identifier(Lexer *lexer, size_t start, int line, int column) {
-    char *word;
-    TokenType type;
-    while (isalnum((unsigned char)peek(lexer)) || peek(lexer) == '_') {
-        advance(lexer);
-    }
-    word = compiler_string_slice(lexer->source, start, lexer->current - start);
-    if (word == NULL) {
-        compiler_error_set(lexer->error, line, column, "out of memory while reading identifier");
-        return false;
-    }
-    type = (strcmp(word, "int") == 0 || strcmp(word, "float") == 0 ||
-            strcmp(word, "char") == 0) ? TOKEN_TYPE : TOKEN_IDENTIFIER;
-    free(word);
-    return add_token(lexer, type, start, line, column);
-}
+            while (isalnum((unsigned char)source[i]) || source[i] == '_') {
+                if (j < MAX_LEXEME - 1) word[j++] = source[i];
+                i++; column++;
+            }
+            word[j] = '\0';
 
-static bool scan_number(Lexer *lexer, size_t start, int line, int column) {
-    TokenType type = TOKEN_INTEGER;
-    while (isdigit((unsigned char)peek(lexer))) {
-        advance(lexer);
-    }
-    if (peek(lexer) == '.' && isdigit((unsigned char)peek_next(lexer))) {
-        type = TOKEN_FLOAT;
-        advance(lexer);
-        while (isdigit((unsigned char)peek(lexer))) {
-            advance(lexer);
+            TokenType type = checkKeyword(word);
+            count = addToken(tokens, count, maxTokens,
+                             type, word, startLine, startColumn);
+            continue;
         }
-    }
-    return add_token(lexer, type, start, line, column);
-}
 
-static bool valid_escape(char character) {
-    return character == 'n' || character == 't' || character == 'r' ||
-           character == '0' || character == '\\' || character == '\'';
-}
+        /* Integer literals */
+        if (isdigit((unsigned char)ch)) {
+            char number[MAX_LEXEME];
+            int  j = 0;
 
-static bool scan_character(Lexer *lexer, size_t start, int line, int column) {
-    advance(lexer); /* opening quote */
-    if (at_end(lexer) || peek(lexer) == '\n') {
-        compiler_error_set(lexer->error, line, column, "unterminated character literal");
-        return false;
-    }
-    if (peek(lexer) == '\\') {
-        advance(lexer);
-        if (!valid_escape(peek(lexer))) {
-            compiler_error_set(lexer->error, lexer->line, lexer->column,
-                               "unknown escape sequence '\\%c'", peek(lexer));
-            return false;
+            while (isdigit((unsigned char)source[i])) {
+                if (j < MAX_LEXEME - 1) number[j++] = source[i];
+                i++; column++;
+            }
+            number[j] = '\0';
+
+            /* Decimal literals not supported */
+            if (source[i] == '.' && isdigit((unsigned char)source[i + 1])) {
+                fprintf(stderr,
+                    "Lexical Error: decimal literal not supported "
+                    "at line %d, column %d\n", line, column);
+                count = addToken(tokens, count, maxTokens,
+                                 TOK_INVALID, number, startLine, startColumn);
+                return count;
+            }
+
+            count = addToken(tokens, count, maxTokens,
+                             TOK_INT_LITERAL, number, startLine, startColumn);
+            continue;
         }
-        advance(lexer);
-    } else {
-        advance(lexer);
-    }
-    if (peek(lexer) != '\'') {
-        compiler_error_set(lexer->error, line, column,
-                           "character literal must contain exactly one character");
-        return false;
-    }
-    advance(lexer);
-    return add_token(lexer, TOKEN_CHARACTER, start, line, column);
-}
 
-static bool skip_block_comment(Lexer *lexer, int line, int column) {
-    advance(lexer);
-    advance(lexer);
-    while (!at_end(lexer)) {
-        if (peek(lexer) == '*' && peek_next(lexer) == '/') {
-            advance(lexer);
-            advance(lexer);
-            return true;
-        }
-        advance(lexer);
-    }
-    compiler_error_set(lexer->error, line, column, "unterminated block comment");
-    return false;
-}
-
-bool lexer_tokenize(const char *source, TokenArray *tokens, CompilerError *error) {
-    Lexer lexer = {source, 0, 1, 1, tokens, error};
-    compiler_error_clear(error);
-    tokens->items = NULL;
-    tokens->count = 0;
-    tokens->capacity = 0;
-
-    while (!at_end(&lexer)) {
-        size_t start = lexer.current;
-        int line = lexer.line;
-        int column = lexer.column;
-        char character = peek(&lexer);
+        /* Single-character operators and delimiters */
         TokenType type;
+        char symbol[2] = {ch, '\0'};
 
-        if (character == ' ' || character == '\t' || character == '\r' || character == '\n') {
-            advance(&lexer);
-            continue;
-        }
-        if (character == '/' && peek_next(&lexer) == '/') {
-            while (!at_end(&lexer) && peek(&lexer) != '\n') {
-                advance(&lexer);
-            }
-            continue;
-        }
-        if (character == '/' && peek_next(&lexer) == '*') {
-            if (!skip_block_comment(&lexer, line, column)) {
-                token_array_free(tokens);
-                return false;
-            }
-            continue;
-        }
-        if (isalpha((unsigned char)character) || character == '_') {
-            if (!scan_identifier(&lexer, start, line, column)) {
-                token_array_free(tokens);
-                return false;
-            }
-            continue;
-        }
-        if (isdigit((unsigned char)character)) {
-            if (!scan_number(&lexer, start, line, column)) {
-                token_array_free(tokens);
-                return false;
-            }
-            continue;
-        }
-        if (character == '\'') {
-            if (!scan_character(&lexer, start, line, column)) {
-                token_array_free(tokens);
-                return false;
-            }
-            continue;
+        switch (ch) {
+            case '=': type = TOK_ASSIGN;    break;
+            case '[': type = TOK_LBRACKET;  break;
+            case ']': type = TOK_RBRACKET;  break;
+            case '{': type = TOK_LBRACE;    break;
+            case '}': type = TOK_RBRACE;    break;
+            case ';': type = TOK_SEMICOLON; break;
+            case '(': type = TOK_LPAREN;    break;
+            case ')': type = TOK_RPAREN;    break;
+            case ',': type = TOK_COMMA;     break;
+            case '+': type = TOK_PLUS;      break;
+            case '-': type = TOK_MINUS;     break;
+            case '*': type = TOK_MULTIPLY;  break;
+            case '/': type = TOK_DIVIDE;    break;
+
+            default:
+                fprintf(stderr,
+                    "Lexical Error: invalid character '%c' "
+                    "at line %d, column %d\n", ch, line, column);
+                count = addToken(tokens, count, maxTokens,
+                                 TOK_INVALID, symbol, startLine, startColumn);
+                return count;
         }
 
-        type = single_character_type(character);
-        if (type != TOKEN_EOF) {
-            advance(&lexer);
-            if (!add_token(&lexer, type, start, line, column)) {
-                token_array_free(tokens);
-                return false;
-            }
-            continue;
-        }
-
-        compiler_error_set(error, line, column, "unexpected character '%c'", character);
-        token_array_free(tokens);
-        return false;
+        count = addToken(tokens, count, maxTokens,
+                         type, symbol, startLine, startColumn);
+        i++; column++;
     }
 
-    if (!add_token(&lexer, TOKEN_EOF, lexer.current, lexer.line, lexer.column)) {
-        token_array_free(tokens);
-        return false;
-    }
-    return true;
+    /* Always end with EOF */
+    count = addToken(tokens, count, maxTokens, TOK_EOF, "EOF", line, column);
+    return count;
 }

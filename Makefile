@@ -1,19 +1,61 @@
-CC ?= gcc
-CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic -Iinclude
-COMMON_SOURCES = src/compiler.c src/token.c src/lexer.c src/ast.c src/parser.c
+# Array Declaration Compiler — Makefile
 
-.PHONY: all test clean
+CC      = gcc
+CFLAGS  = -Wall -Wextra -pedantic -std=c99 -g
+SRCDIR  = src
+TARGET  = array_compiler
 
-all: mini_compiler
+# Our compiler front-end sources (Member 2, 3, 4)
+SRCS = $(SRCDIR)/main.c \
+       $(SRCDIR)/lexer.c \
+       $(SRCDIR)/ast.c \
+       $(SRCDIR)/parser.c \
+       $(SRCDIR)/semantic.c
 
-mini_compiler: $(COMMON_SOURCES) src/main.c
-	$(CC) $(CFLAGS) $^ -o $@
+OBJS = $(SRCS:.c=.o)
 
-compiler_tests: $(COMMON_SOURCES) tests/test_compiler.c
-	$(CC) $(CFLAGS) $^ -o $@
+# ── Default target ─────────────────────────────────────────────
+all: $(TARGET)
 
-test: compiler_tests
-	./compiler_tests
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $^
 
+# Compile each .c to .o, headers live in src/ only
+$(SRCDIR)/%.o: $(SRCDIR)/%.c
+	$(CC) $(CFLAGS) -I$(SRCDIR) -c -o $@ $<
+
+# ── Run all tests ──────────────────────────────────────────────
+.PHONY: test
+test: $(TARGET)
+	@echo ""
+	@echo "======================================================"
+	@echo "  VALID SYNTAX TESTS (expect: ACCEPTED)"
+	@echo "======================================================"
+	@for f in tests/inputs/v*.c; do \
+	    echo ""; \
+	    echo "--- $$f ---"; \
+	    ./$(TARGET) $$f; \
+	done
+	@echo ""
+	@echo "======================================================"
+	@echo "  INVALID SYNTAX TESTS (expect: REJECTED)"
+	@echo "======================================================"
+	@for f in tests/inputs/i*.c; do \
+	    echo ""; \
+	    echo "--- $$f ---"; \
+	    ./$(TARGET) $$f; \
+	done
+	@echo ""
+	@echo "======================================================"
+	@echo "  SEMANTIC ERROR TESTS (expect: REJECTED)"
+	@echo "======================================================"
+	@for f in tests/inputs/s*.c; do \
+	    echo ""; \
+	    echo "--- $$f ---"; \
+	    ./$(TARGET) $$f; \
+	done
+
+# ── Clean ──────────────────────────────────────────────────────
+.PHONY: clean
 clean:
-	$(RM) mini_compiler compiler_tests mini_compiler.exe compiler_tests.exe
+	rm -f $(OBJS) $(TARGET)
