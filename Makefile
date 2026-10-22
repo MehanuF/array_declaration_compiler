@@ -1,17 +1,10 @@
 # Array Declaration Compiler — Makefile
 
 CC      = gcc
-CFLAGS  = -Wall -Wextra -pedantic -std=c99 -g
-SRCDIR  = src
+CFLAGS  = -Wall -Wextra -pedantic -std=c99 -g -Isrc
 TARGET  = array_compiler
 
-# Our compiler front-end sources (Member 2, 3, 4)
-SRCS = $(SRCDIR)/main.c \
-       $(SRCDIR)/lexer.c \
-       $(SRCDIR)/ast.c \
-       $(SRCDIR)/parser.c \
-       $(SRCDIR)/semantic.c
-
+SRCS = src/main.c src/lexer.c src/ast.c src/parser.c src/semantic.c
 OBJS = $(SRCS:.c=.o)
 
 # ── Default target ─────────────────────────────────────────────
@@ -20,40 +13,72 @@ all: $(TARGET)
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 
-# Compile each .c to .o, headers live in src/ only
-$(SRCDIR)/%.o: $(SRCDIR)/%.c
-	$(CC) $(CFLAGS) -I$(SRCDIR) -c -o $@ $<
+src/%.o: src/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 
-# ── Run all tests ──────────────────────────────────────────────
+# ── Automated test runner (verifies exit codes) ────────────────
 .PHONY: test
 test: $(TARGET)
-	@echo ""
-	@echo "======================================================"
-	@echo "  VALID SYNTAX TESTS (expect: ACCEPTED)"
-	@echo "======================================================"
-	@for f in tests/inputs/v*.c; do \
-	    echo ""; \
-	    echo "--- $$f ---"; \
-	    ./$(TARGET) $$f; \
-	done
-	@echo ""
-	@echo "======================================================"
-	@echo "  INVALID SYNTAX TESTS (expect: REJECTED)"
-	@echo "======================================================"
-	@for f in tests/inputs/i*.c; do \
-	    echo ""; \
-	    echo "--- $$f ---"; \
-	    ./$(TARGET) $$f; \
-	done
-	@echo ""
-	@echo "======================================================"
-	@echo "  SEMANTIC ERROR TESTS (expect: REJECTED)"
-	@echo "======================================================"
-	@for f in tests/inputs/s*.c; do \
-	    echo ""; \
-	    echo "--- $$f ---"; \
-	    ./$(TARGET) $$f; \
-	done
+	@pass=0; fail=0; total=0; \
+	echo ""; \
+	echo "======================================================"; \
+	echo "  VALID SYNTAX TESTS (expect exit 0 = ACCEPTED)"; \
+	echo "======================================================"; \
+	for f in tests/inputs/v*.c; do \
+	    total=$$((total + 1)); \
+	    ./$(TARGET) $$f > /dev/null 2>&1; \
+	    rc=$$?; \
+	    if [ $$rc -eq 0 ]; then \
+	        echo "  PASS  $$f"; \
+	        pass=$$((pass + 1)); \
+	    else \
+	        echo "  FAIL  $$f  (exit $$rc, expected 0)"; \
+	        fail=$$((fail + 1)); \
+	    fi; \
+	done; \
+	echo ""; \
+	echo "======================================================"; \
+	echo "  INVALID SYNTAX TESTS (expect exit 1 = REJECTED)"; \
+	echo "======================================================"; \
+	for f in tests/inputs/i*.c; do \
+	    total=$$((total + 1)); \
+	    ./$(TARGET) $$f > /dev/null 2>&1; \
+	    rc=$$?; \
+	    if [ $$rc -eq 1 ]; then \
+	        echo "  PASS  $$f"; \
+	        pass=$$((pass + 1)); \
+	    else \
+	        echo "  FAIL  $$f  (exit $$rc, expected 1)"; \
+	        fail=$$((fail + 1)); \
+	    fi; \
+	done; \
+	echo ""; \
+	echo "======================================================"; \
+	echo "  SEMANTIC ERROR TESTS (expect exit 2 = REJECTED)"; \
+	echo "======================================================"; \
+	for f in tests/inputs/s*.c; do \
+	    total=$$((total + 1)); \
+	    ./$(TARGET) $$f > /dev/null 2>&1; \
+	    rc=$$?; \
+	    if [ $$rc -eq 2 ]; then \
+	        echo "  PASS  $$f"; \
+	        pass=$$((pass + 1)); \
+	    else \
+	        echo "  FAIL  $$f  (exit $$rc, expected 2)"; \
+	        fail=$$((fail + 1)); \
+	    fi; \
+	done; \
+	echo ""; \
+	echo "======================================================"; \
+	echo "  RESULTS: $$pass/$$total passed, $$fail failed"; \
+	echo "======================================================"; \
+	if [ $$fail -ne 0 ]; then exit 1; fi
+
+# ── Run a single test with full output ─────────────────────────
+.PHONY: run
+run: $(TARGET)
+	@echo "Usage: make run FILE=tests/inputs/v4.c"
+	@if [ -n "$(FILE)" ]; then ./$(TARGET) $(FILE); fi
 
 # ── Clean ──────────────────────────────────────────────────────
 .PHONY: clean

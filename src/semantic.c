@@ -185,12 +185,13 @@ static void analyzeDecl(const ASTNode *node,
 
     ElemType et = strToType(node->typeName);
 
-    /* Register array (allow redeclaration with a warning for simplicity) */
+    /* Register array — redeclaration is an error */
     if (lookupSymbol(st, node->name)) {
         fprintf(stderr,
-            "Semantic Warning [line %d, col %d]: "
-            "array '%s' already declared (redeclaration ignored)\n",
+            "Semantic Error [line %d, col %d]: "
+            "array '%s' is already declared\n",
             node->line, node->column, node->name);
+        (*errorCount)++;
     } else {
         insertSymbol(st, node->name, et, node->intVal, node->line);
     }
@@ -264,14 +265,16 @@ static void analyzeAssign(const ASTNode *node,
     /* Rule 4: type compatibility */
     if (ltype != TYPE_UNKNOWN && rr.type != TYPE_UNKNOWN
         && ltype != rr.type) {
-        /* Allow int → float widening */
-        if (!(ltype == TYPE_FLOAT && rr.type == TYPE_INT)) {
+        /* Allow int → float widening and char ← int */
+        if (!(ltype == TYPE_FLOAT && rr.type == TYPE_INT)
+            && !(ltype == TYPE_CHAR && rr.type == TYPE_INT)) {
             fprintf(stderr,
-                "Semantic Warning [line %d, col %d]: "
-                "possible type mismatch in assignment "
+                "Semantic Error [line %d, col %d]: "
+                "type mismatch in assignment "
                 "(lvalue is '%s', rvalue is '%s')\n",
                 node->line, node->column,
                 typeToStr(ltype), typeToStr(rr.type));
+            (*errorCount)++;
         }
     }
 }
