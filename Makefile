@@ -1,61 +1,55 @@
-# Array Declaration Compiler — Makefile
+CC = gcc
+CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -Werror -g
+INCLUDES = -Iinclude -Isrc
 
-CC      = gcc
-CFLAGS  = -Wall -Wextra -pedantic -std=c99 -g
-SRCDIR  = src
-TARGET  = array_compiler
+TARGET = array_compiler
+TEST_TARGET = compiler_tests
 
-# Our compiler front-end sources (Member 2, 3, 4)
-SRCS = $(SRCDIR)/main.c \
-       $(SRCDIR)/lexer.c \
-       $(SRCDIR)/ast.c \
-       $(SRCDIR)/parser.c \
-       $(SRCDIR)/semantic.c
+SRCS = src/compiler.c \
+       src/token.c \
+       src/lexer.c \
+       src/ast.c \
+       src/parser.c \
+       src/semantic.c \
+       src/main.c
 
 OBJS = $(SRCS:.c=.o)
+TEST_SRCS = src/compiler.c \
+            src/token.c \
+            src/lexer.c \
+            src/ast.c \
+            src/parser.c \
+            src/semantic.c \
+            tests/test_compiler.c
 
-# ── Default target ─────────────────────────────────────────────
+.PHONY: all clean test
+
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $(OBJS)
 
-# Compile each .c to .o, headers live in src/ only
-$(SRCDIR)/%.o: $(SRCDIR)/%.c
-	$(CC) $(CFLAGS) -I$(SRCDIR) -c -o $@ $<
+src/%.o: src/%.c
+	$(CC) $(CFLAGS) $(INCLUDES) -c -o $@ $<
 
-# ── Run all tests ──────────────────────────────────────────────
-.PHONY: test
-test: $(TARGET)
-	@echo ""
-	@echo "======================================================"
-	@echo "  VALID SYNTAX TESTS (expect: ACCEPTED)"
-	@echo "======================================================"
-	@for f in tests/inputs/v*.c; do \
-	    echo ""; \
-	    echo "--- $$f ---"; \
-	    ./$(TARGET) $$f; \
-	done
-	@echo ""
-	@echo "======================================================"
-	@echo "  INVALID SYNTAX TESTS (expect: REJECTED)"
-	@echo "======================================================"
-	@for f in tests/inputs/i*.c; do \
-	    echo ""; \
-	    echo "--- $$f ---"; \
-	    ./$(TARGET) $$f; \
-	done
-	@echo ""
-	@echo "======================================================"
-	@echo "  SEMANTIC ERROR TESTS (expect: REJECTED)"
-	@echo "======================================================"
-	@for f in tests/inputs/s*.c; do \
-	    echo ""; \
-	    echo "--- $$f ---"; \
-	    ./$(TARGET) $$f; \
-	done
+$(TEST_TARGET): $(TEST_SRCS)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(TEST_SRCS)
 
-# ── Clean ──────────────────────────────────────────────────────
-.PHONY: clean
+test: $(TARGET) $(TEST_TARGET)
+	./$(TEST_TARGET)
+	@set -e; \
+	failed=0; \
+	for f in tests/inputs/v*.c; do \
+		if ! ./$(TARGET) $$f >/dev/null 2>&1; then \
+			echo "FAIL: expected ACCEPTED for $$f"; failed=1; \
+		fi; \
+	done; \
+	for f in tests/inputs/i*.c tests/inputs/s*.c; do \
+		if ./$(TARGET) $$f >/dev/null 2>&1; then \
+			echo "FAIL: expected REJECTED for $$f"; failed=1; \
+		fi; \
+	done; \
+	if [ $$failed -ne 0 ]; then exit 1; fi
+
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f $(TARGET) $(TEST_TARGET) src/*.o

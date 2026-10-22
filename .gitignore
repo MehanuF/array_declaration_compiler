@@ -209,6 +209,7 @@ tempCodeRunnerFile.py
 *.exe
 *.o
 *.obj
+array_compiler
 compiler_tests
 mini_compiler
 
