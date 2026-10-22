@@ -205,6 +205,13 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# C build outputs
+*.exe
+*.o
+*.obj
+compiler_tests
+mini_compiler
+
 # Ruff stuff:
 .ruff_cache/
 
