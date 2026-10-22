@@ -1,434 +1,545 @@
-/*
- * Array Declaration Compiler
- * Member 3 — Recursive-Descent Parser (implementation)
- *
- * Implements a hand-written LL(1) predictive parser for the CFG
- * defined in grammar/array_grammar.txt.  Each grammar non-terminal
- * maps 1-to-1 to a static C function.  Each function builds and
- * returns the corresponding AST subtree.
- *
- * Grammar (for reference):
- *
- *   Program         → StatementList
- *   StatementList   → Statement StatementList | ε
- *   Statement       → Declaration ; | Assignment ;
- *   Declaration     → Type ID [ INT_LITERAL ] InitializerOpt
- *   Type            → int | float | char
- *   InitializerOpt  → = { InitializerList } | ε
- *   InitializerList → Expression InitializerTail
- *   InitializerTail → , Expression InitializerTail | ε
- *   Assignment      → LValue = Expression
- *   LValue          → ID | ID [ Expression ]
- *   Expression      → Term ExpressionTail
- *   ExpressionTail  → + Term ExpressionTail | - Term ExpressionTail | ε
- *   Term            → Factor TermTail
- *   TermTail        → * Factor TermTail | / Factor TermTail | ε
- *   Factor          → ID | INT_LITERAL | ( Expression ) | ID [ Expression ]
- */
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include "parser.h"
 
-/* ── Parser state ─────────────────────────────────────────────── */
+#include <stdlib.h>
+
 typedef struct {
-    const Token *tokens;
-    int          numTokens;
-    int          pos;        /* index of the current token         */
-    int          hadError;   /* set to 1 on first syntax error     */
+    const TokenArray *tokens;
+    size_t current;
+    CompilerError *error;
 } Parser;
 
-/* ── Forward declarations of grammar functions ────────────────── */
-static ASTNode *parseStatementList(Parser *p);
-static ASTNode *parseStatement    (Parser *p);
-static ASTNode *parseDeclaration  (Parser *p);
-static ASTNode *parseInitializerOpt(Parser *p);
-static ASTNode *parseInitializerList(Parser *p);
-static ASTNode *parseAssignment   (Parser *p);
-static ASTNode *parseLValue       (Parser *p);
-static ASTNode *parseExpression   (Parser *p);
-static ASTNode *parseExpressionTail(Parser *p, ASTNode *left);
-static ASTNode *parseTerm         (Parser *p);
-static ASTNode *parseTermTail     (Parser *p, ASTNode *left);
-static ASTNode *parseFactor       (Parser *p);
-
-/* ── Utility: current token ───────────────────────────────────── */
-static const Token *current(const Parser *p) {
-    if (p->pos < p->numTokens) return &p->tokens[p->pos];
-    return &p->tokens[p->numTokens - 1]; /* last token = EOF */
+static const Token *parser_peek(const Parser *parser) {
+    return &parser->tokens->items[parser->current];
 }
 
-/* ── Utility: peek ahead by `n` positions ────────────────────── */
-static const Token *peek(const Parser *p, int n) {
-    int idx = p->pos + n;
-    if (idx >= p->numTokens) return &p->tokens[p->numTokens - 1];
-    return &p->tokens[idx];
+static const Token *parser_previous(const Parser *parser) {
+    return &parser->tokens->items[parser->current - 1];
 }
 
-/* ── Utility: advance and return consumed token ──────────────── */
-static const Token *advance(Parser *p) {
-    const Token *t = current(p);
-    if (p->pos < p->numTokens - 1) p->pos++;
-    return t;
+static bool parser_is_at_end(const Parser *parser) {
+    return parser_peek(parser)->type == TOKEN_EOF;
 }
 
-/* ── Utility: consume expected token or report error ─────────── */
-static const Token *expect(Parser *p, TokenType type) {
-    const Token *t = current(p);
-    if (t->type != type) {
-        fprintf(stderr,
-            "Syntax Error [line %d, col %d]: expected '%s', found '%s' ('%s')\n",
-            t->line, t->column,
-            tokenName(type), tokenName(t->type), t->lexeme);
-        p->hadError = 1;
-        return t; /* continue to collect more errors */
+static const Token *parser_advance(Parser *parser) {
+    if (!parser_is_at_end(parser)) {
+        parser->current++;
     }
-    return advance(p);
+    return parser_previous(parser);
 }
 
-/* ── isType ───────────────────────────────────────────────────── */
-static int isType(TokenType t) {
-    return t == TOK_INT || t == TOK_FLOAT || t == TOK_CHAR;
-}
-
-/* ================================================================
-   GRAMMAR FUNCTIONS
-   ================================================================ */
-
-/*
- * Program → StatementList
- */
-static ASTNode *parseProgram(Parser *p) {
-    const Token *t  = current(p);
-    ASTNode     *root = makeNode(NODE_PROGRAM, t->line, t->column);
-    ASTNode     *list = parseStatementList(p);
-
-    /* Add each statement as a direct child of PROGRAM */
-    for (int i = 0; i < list->numChildren; i++)
-        addChild(root, list->children[i]);
-
-    /* Free the temporary list node (not its children) */
-    free(list);
-    return root;
-}
-
-/*
- * StatementList → Statement StatementList | ε
- */
-static ASTNode *parseStatementList(Parser *p) {
-    const Token *t    = current(p);
-    ASTNode     *list = makeNode(NODE_PROGRAM, t->line, t->column);
-
-    while (!p->hadError) {
-        TokenType tt = current(p)->type;
-
-        /* FIRST(Statement) = {int, float, char, ID} */
-        if (!isType(tt) && tt != TOK_ID && tt != TOK_EOF)
-            break;
-        if (tt == TOK_EOF)
-            break;
-
-        ASTNode *stmt = parseStatement(p);
-        if (stmt) addChild(list, stmt);
+static bool parser_check(const Parser *parser, TokenType type) {
+    if (parser_is_at_end(parser)) {
+        return type == TOKEN_EOF;
     }
-    return list;
+    return parser_peek(parser)->type == type;
 }
 
-/*
- * Statement → Declaration ; | Assignment ;
- *
- * Disambiguate: if the first token is a type keyword → Declaration.
- * Otherwise start with ID → Assignment.
- */
-static ASTNode *parseStatement(Parser *p) {
-    if (isType(current(p)->type)) {
-        ASTNode *decl = parseDeclaration(p);
-        expect(p, TOK_SEMICOLON);
-        return decl;
+static bool parser_match(Parser *parser, TokenType type) {
+    if (!parser_check(parser, type)) {
+        return false;
     }
-    if (current(p)->type == TOK_ID) {
-        ASTNode *asgn = parseAssignment(p);
-        expect(p, TOK_SEMICOLON);
-        return asgn;
-    }
-    /* Unexpected token */
-    const Token *t = current(p);
-    fprintf(stderr,
-        "Syntax Error [line %d, col %d]: unexpected token '%s' ('%s')\n",
-        t->line, t->column, tokenName(t->type), t->lexeme);
-    p->hadError = 1;
-    return NULL;
+    parser_advance(parser);
+    return true;
 }
 
-/*
- * Declaration → Type ID [ INT_LITERAL ] InitializerOpt
- */
-static ASTNode *parseDeclaration(Parser *p) {
-    const Token *typeTok = current(p);
-    ASTNode     *node    = makeNode(NODE_DECL, typeTok->line, typeTok->column);
-
-    /* Type */
-    if (!isType(typeTok->type)) {
-        fprintf(stderr,
-            "Syntax Error [line %d, col %d]: expected type keyword, found '%s'\n",
-            typeTok->line, typeTok->column, typeTok->lexeme);
-        p->hadError = 1;
-        return node;
-    }
-    strncpy(node->typeName, typeTok->lexeme, sizeof(node->typeName) - 1);
-    advance(p);
-
-    /* ID */
-    const Token *idTok = expect(p, TOK_ID);
-    strncpy(node->name, idTok->lexeme, sizeof(node->name) - 1);
-
-    /* [ */
-    expect(p, TOK_LBRACKET);
-
-    /* INT_LITERAL (array size) */
-    const Token *sizeTok = current(p);
-    if (sizeTok->type != TOK_INT_LITERAL) {
-        fprintf(stderr,
-            "Syntax Error [line %d, col %d]: expected array size (integer), found '%s'\n",
-            sizeTok->line, sizeTok->column, sizeTok->lexeme);
-        p->hadError = 1;
-    } else {
-        node->intVal = atoi(sizeTok->lexeme);
-        advance(p);
-    }
-
-    /* ] */
-    expect(p, TOK_RBRACKET);
-
-    /* OptInitializer */
-    ASTNode *init = parseInitializerOpt(p);
-    if (init) addChild(node, init);
-
-    return node;
-}
-
-/*
- * InitializerOpt → = { InitializerList } | ε
- */
-static ASTNode *parseInitializerOpt(Parser *p) {
-    if (current(p)->type != TOK_ASSIGN) return NULL; /* ε */
-
-    const Token *eq = advance(p); /* consume '=' */
-    expect(p, TOK_LBRACE);
-
-    ASTNode *list = makeNode(NODE_INIT_LIST, eq->line, eq->column);
-    ASTNode *inner = parseInitializerList(p);
-
-    for (int i = 0; i < inner->numChildren; i++)
-        addChild(list, inner->children[i]);
-    free(inner);
-
-    expect(p, TOK_RBRACE);
-    return list;
-}
-
-/*
- * InitializerList → Expression InitializerTail
- */
-static ASTNode *parseInitializerList(Parser *p) {
-    const Token *t    = current(p);
-    ASTNode     *list = makeNode(NODE_INIT_LIST, t->line, t->column);
-
-    ASTNode *expr = parseExpression(p);
-    if (expr) addChild(list, expr);
-
-    /* InitializerTail → , Expression InitializerTail | ε */
-    while (current(p)->type == TOK_COMMA) {
-        advance(p); /* consume ',' */
-        ASTNode *e = parseExpression(p);
-        if (e) addChild(list, e);
-    }
-    return list;
-}
-
-/*
- * Assignment → LValue = Expression
- */
-static ASTNode *parseAssignment(Parser *p) {
-    const Token *t    = current(p);
-    ASTNode     *node = makeNode(NODE_ASSIGN, t->line, t->column);
-
-    ASTNode *lval = parseLValue(p);
-    if (lval) addChild(node, lval);
-
-    expect(p, TOK_ASSIGN);
-
-    ASTNode *expr = parseExpression(p);
-    if (expr) addChild(node, expr);
-
-    return node;
-}
-
-/*
- * LValue → ID | ID [ Expression ]
- *
- * Both alternatives start with ID.  Look at the next token to
- * decide: if it's '[' we have an indexed access.
- */
-static ASTNode *parseLValue(Parser *p) {
-    const Token *idTok = expect(p, TOK_ID);
-
-    if (current(p)->type == TOK_LBRACKET) {
-        /* ID [ Expression ] */
-        ASTNode *node = makeNode(NODE_ARRAY_ACCESS,
-                                 idTok->line, idTok->column);
-        strncpy(node->name, idTok->lexeme, sizeof(node->name) - 1);
-        advance(p); /* consume '[' */
-        ASTNode *idx = parseExpression(p);
-        if (idx) addChild(node, idx);
-        expect(p, TOK_RBRACKET);
-        return node;
-    }
-
-    /* Plain identifier */
-    ASTNode *node = makeNode(NODE_ID, idTok->line, idTok->column);
-    strncpy(node->name, idTok->lexeme, sizeof(node->name) - 1);
-    return node;
-}
-
-/*
- * Expression → Term ExpressionTail
- */
-static ASTNode *parseExpression(Parser *p) {
-    ASTNode *left = parseTerm(p);
-    return parseExpressionTail(p, left);
-}
-
-/*
- * ExpressionTail → + Term ExpressionTail
- *                | - Term ExpressionTail
- *                | ε
- */
-static ASTNode *parseExpressionTail(Parser *p, ASTNode *left) {
-    TokenType tt = current(p)->type;
-    if (tt != TOK_PLUS && tt != TOK_MINUS) return left; /* ε */
-
-    const Token *opTok = advance(p);
-    ASTNode     *node  = makeNode(NODE_BINOP, opTok->line, opTok->column);
-    node->name[0] = opTok->lexeme[0];
-    node->name[1] = '\0';
-
-    ASTNode *right = parseTerm(p);
-    addChild(node, left);
-    addChild(node, right);
-
-    return parseExpressionTail(p, node);
-}
-
-/*
- * Term → Factor TermTail
- */
-static ASTNode *parseTerm(Parser *p) {
-    ASTNode *left = parseFactor(p);
-    return parseTermTail(p, left);
-}
-
-/*
- * TermTail → * Factor TermTail | / Factor TermTail | ε
- */
-static ASTNode *parseTermTail(Parser *p, ASTNode *left) {
-    TokenType tt = current(p)->type;
-    if (tt != TOK_MULTIPLY && tt != TOK_DIVIDE) return left; /* ε */
-
-    const Token *opTok = advance(p);
-    ASTNode     *node  = makeNode(NODE_BINOP, opTok->line, opTok->column);
-    node->name[0] = opTok->lexeme[0];
-    node->name[1] = '\0';
-
-    ASTNode *right = parseFactor(p);
-    addChild(node, left);
-    addChild(node, right);
-
-    return parseTermTail(p, node);
-}
-
-/*
- * Factor → ID
- *         | INT_LITERAL
- *         | ( Expression )
- *         | ID [ Expression ]
- *
- * Both ID alternatives start with TOK_ID; look at token+1 to pick.
- */
-static ASTNode *parseFactor(Parser *p) {
-    const Token *t = current(p);
-
-    if (t->type == TOK_ID) {
-        if (peek(p, 1)->type == TOK_LBRACKET) {
-            /* ID [ Expression ] */
-            const Token *idTok = advance(p); /* ID */
-            ASTNode     *node  = makeNode(NODE_ARRAY_ACCESS,
-                                          idTok->line, idTok->column);
-            strncpy(node->name, idTok->lexeme, sizeof(node->name) - 1);
-            advance(p); /* '[' */
-            ASTNode *idx = parseExpression(p);
-            if (idx) addChild(node, idx);
-            expect(p, TOK_RBRACKET);
-            return node;
+static bool parser_consume(Parser *parser, TokenType type, const char *message,
+                           const Token **token_out) {
+    const Token *token = parser_peek(parser);
+    if (parser_check(parser, type)) {
+        token = parser_advance(parser);
+        if (token_out != NULL) {
+            *token_out = token;
         }
-        /* Plain ID */
-        advance(p);
-        ASTNode *node = makeNode(NODE_ID, t->line, t->column);
-        strncpy(node->name, t->lexeme, sizeof(node->name) - 1);
-        return node;
+        return true;
     }
 
-    if (t->type == TOK_INT_LITERAL) {
-        advance(p);
-        ASTNode *node = makeNode(NODE_INT_LIT, t->line, t->column);
-        node->intVal = atoi(t->lexeme);
-        return node;
-    }
-
-    if (t->type == TOK_LPAREN) {
-        advance(p); /* '(' */
-        ASTNode *expr = parseExpression(p);
-        expect(p, TOK_RPAREN);
-        return expr;
-    }
-
-    /* Error */
-    fprintf(stderr,
-        "Syntax Error [line %d, col %d]: expected expression, found '%s' ('%s')\n",
-        t->line, t->column, tokenName(t->type), t->lexeme);
-    p->hadError = 1;
-
-    ASTNode *err = makeNode(NODE_INT_LIT, t->line, t->column);
-    err->intVal = 0;
-    return err;
+    compiler_error_set(parser->error, token->line, token->column,
+                       "%s, found '%s'", message, token->lexeme);
+    return false;
 }
 
-/* ================================================================
-   PUBLIC ENTRY POINT
-   ================================================================ */
-
-ASTNode *parse(const Token *tokens, int numTokens) {
-    Parser p;
-    p.tokens    = tokens;
-    p.numTokens = numTokens;
-    p.pos       = 0;
-    p.hadError  = 0;
-
-    ASTNode *root = parseProgram(&p);
-
-    /* Check we consumed everything (except EOF) */
-    if (!p.hadError && current(&p)->type != TOK_EOF) {
-        const Token *t = current(&p);
-        fprintf(stderr,
-            "Syntax Error [line %d, col %d]: unexpected token '%s' after end of input\n",
-            t->line, t->column, t->lexeme);
-        p.hadError = 1;
-    }
-
-    if (p.hadError) {
-        freeAST(root);
+static Expression *make_expression(ExpressionKind kind, const Token *token) {
+    Expression *expression = calloc(1, sizeof(Expression));
+    if (expression == NULL) {
         return NULL;
     }
-    return root;
+    expression->kind = kind;
+    expression->line = token->line;
+    expression->column = token->column;
+    return expression;
+}
+
+static Statement *make_statement(StatementKind kind, const Token *token) {
+    Statement *statement = calloc(1, sizeof(Statement));
+    if (statement == NULL) {
+        return NULL;
+    }
+    statement->kind = kind;
+    statement->line = token->line;
+    statement->column = token->column;
+    return statement;
+}
+
+static bool parse_expression(Parser *parser, Expression **out_expression);
+
+static char parse_character_value(const char *lexeme) {
+    if (lexeme[1] != '\\') {
+        return lexeme[1];
+    }
+    switch (lexeme[2]) {
+        case 'n':
+            return '\n';
+        case 't':
+            return '\t';
+        case 'r':
+            return '\r';
+        case '0':
+            return '\0';
+        case '\\':
+            return '\\';
+        case '\'':
+            return '\'';
+        default:
+            return lexeme[2];
+    }
+}
+
+static bool parse_primary(Parser *parser, Expression **out_expression) {
+    const Token *token = parser_peek(parser);
+
+    if (parser_match(parser, TOKEN_INTEGER)) {
+        Expression *expression = make_expression(EXPR_INTEGER, token);
+        if (expression == NULL) {
+            compiler_error_set(parser->error, token->line, token->column, "out of memory");
+            return false;
+        }
+        expression->as.integer_value = strtol(token->lexeme, NULL, 10);
+        *out_expression = expression;
+        return true;
+    }
+
+    if (parser_match(parser, TOKEN_FLOAT)) {
+        Expression *expression = make_expression(EXPR_FLOAT, token);
+        if (expression == NULL) {
+            compiler_error_set(parser->error, token->line, token->column, "out of memory");
+            return false;
+        }
+        expression->as.float_value = strtod(token->lexeme, NULL);
+        *out_expression = expression;
+        return true;
+    }
+
+    if (parser_match(parser, TOKEN_CHARACTER)) {
+        Expression *expression = make_expression(EXPR_CHARACTER, token);
+        if (expression == NULL) {
+            compiler_error_set(parser->error, token->line, token->column, "out of memory");
+            return false;
+        }
+        expression->as.character_value = parse_character_value(token->lexeme);
+        *out_expression = expression;
+        return true;
+    }
+
+    if (parser_match(parser, TOKEN_IDENTIFIER)) {
+        Expression *expression = NULL;
+
+        if (parser_match(parser, TOKEN_LBRACKET)) {
+            Expression *index = NULL;
+            expression = make_expression(EXPR_ARRAY_ACCESS, token);
+            if (expression == NULL) {
+                compiler_error_set(parser->error, token->line, token->column, "out of memory");
+                return false;
+            }
+            expression->as.array_access.array_name = compiler_string_duplicate(token->lexeme);
+            if (expression->as.array_access.array_name == NULL) {
+                expression_free(expression);
+                compiler_error_set(parser->error, token->line, token->column, "out of memory");
+                return false;
+            }
+            if (!parse_expression(parser, &index)) {
+                expression_free(expression);
+                return false;
+            }
+            expression->as.array_access.index = index;
+            if (!parser_consume(parser, TOKEN_RBRACKET, "expected ']'", NULL)) {
+                expression_free(expression);
+                return false;
+            }
+            *out_expression = expression;
+            return true;
+        }
+
+        expression = make_expression(EXPR_IDENTIFIER, token);
+        if (expression == NULL) {
+            compiler_error_set(parser->error, token->line, token->column, "out of memory");
+            return false;
+        }
+        expression->as.identifier = compiler_string_duplicate(token->lexeme);
+        if (expression->as.identifier == NULL) {
+            expression_free(expression);
+            compiler_error_set(parser->error, token->line, token->column, "out of memory");
+            return false;
+        }
+        *out_expression = expression;
+        return true;
+    }
+
+    if (parser_match(parser, TOKEN_LPAREN)) {
+        Expression *inner = NULL;
+        if (!parse_expression(parser, &inner)) {
+            return false;
+        }
+        if (!parser_consume(parser, TOKEN_RPAREN, "expected ')'", NULL)) {
+            expression_free(inner);
+            return false;
+        }
+        *out_expression = inner;
+        return true;
+    }
+
+    compiler_error_set(parser->error, token->line, token->column,
+                       "expected expression, found '%s'", token->lexeme);
+    return false;
+}
+
+static bool parse_unary(Parser *parser, Expression **out_expression) {
+    const Token *token = parser_peek(parser);
+    if (parser_match(parser, TOKEN_PLUS) || parser_match(parser, TOKEN_MINUS)) {
+        Expression *operand = NULL;
+        Expression *expression = make_expression(EXPR_UNARY, token);
+        if (expression == NULL) {
+            compiler_error_set(parser->error, token->line, token->column, "out of memory");
+            return false;
+        }
+        expression->as.unary.operator = token->lexeme[0];
+        if (!parse_unary(parser, &operand)) {
+            expression_free(expression);
+            return false;
+        }
+        expression->as.unary.operand = operand;
+        *out_expression = expression;
+        return true;
+    }
+
+    return parse_primary(parser, out_expression);
+}
+
+static bool parse_multiplication(Parser *parser, Expression **out_expression) {
+    Expression *left = NULL;
+    if (!parse_unary(parser, &left)) {
+        return false;
+    }
+
+    while (parser_check(parser, TOKEN_STAR) || parser_check(parser, TOKEN_SLASH) ||
+           parser_check(parser, TOKEN_PERCENT)) {
+        const Token *operator_token = parser_advance(parser);
+        Expression *right = NULL;
+        Expression *binary = make_expression(EXPR_BINARY, operator_token);
+        if (binary == NULL) {
+            expression_free(left);
+            compiler_error_set(parser->error, operator_token->line, operator_token->column,
+                               "out of memory");
+            return false;
+        }
+        binary->as.binary.operator = operator_token->lexeme[0];
+        binary->as.binary.left = left;
+
+        if (!parse_unary(parser, &right)) {
+            expression_free(binary);
+            return false;
+        }
+
+        binary->as.binary.right = right;
+        left = binary;
+    }
+
+    *out_expression = left;
+    return true;
+}
+
+static bool parse_addition(Parser *parser, Expression **out_expression) {
+    Expression *left = NULL;
+    if (!parse_multiplication(parser, &left)) {
+        return false;
+    }
+
+    while (parser_check(parser, TOKEN_PLUS) || parser_check(parser, TOKEN_MINUS)) {
+        const Token *operator_token = parser_advance(parser);
+        Expression *right = NULL;
+        Expression *binary = make_expression(EXPR_BINARY, operator_token);
+        if (binary == NULL) {
+            expression_free(left);
+            compiler_error_set(parser->error, operator_token->line, operator_token->column,
+                               "out of memory");
+            return false;
+        }
+        binary->as.binary.operator = operator_token->lexeme[0];
+        binary->as.binary.left = left;
+
+        if (!parse_multiplication(parser, &right)) {
+            expression_free(binary);
+            return false;
+        }
+
+        binary->as.binary.right = right;
+        left = binary;
+    }
+
+    *out_expression = left;
+    return true;
+}
+
+static bool parse_expression(Parser *parser, Expression **out_expression) {
+    return parse_addition(parser, out_expression);
+}
+
+static bool append_statement(Program *program, Statement *statement, CompilerError *error) {
+    if (program->count == program->capacity) {
+        size_t new_capacity = program->capacity == 0 ? 8 : program->capacity * 2;
+        Statement **new_items = realloc(program->statements, new_capacity * sizeof(Statement *));
+        if (new_items == NULL) {
+            compiler_error_set(error, statement->line, statement->column, "out of memory");
+            return false;
+        }
+        program->statements = new_items;
+        program->capacity = new_capacity;
+    }
+    program->statements[program->count++] = statement;
+    return true;
+}
+
+static bool append_initializer(Expression ***items, size_t *count, size_t *capacity,
+                               Expression *expression, const Token *token,
+                               CompilerError *error) {
+    if (*count == *capacity) {
+        size_t new_capacity = *capacity == 0 ? 4 : *capacity * 2;
+        Expression **new_items = realloc(*items, new_capacity * sizeof(Expression *));
+        if (new_items == NULL) {
+            compiler_error_set(error, token->line, token->column, "out of memory");
+            return false;
+        }
+        *items = new_items;
+        *capacity = new_capacity;
+    }
+    (*items)[(*count)++] = expression;
+    return true;
+}
+
+static bool parse_initializer(Parser *parser, Expression ***items,
+                              size_t *count, size_t *capacity) {
+    if (!parser_consume(parser, TOKEN_LBRACE, "expected '{'", NULL)) {
+        return false;
+    }
+
+    if (parser_match(parser, TOKEN_RBRACE)) {
+        return true;
+    }
+
+    while (true) {
+        Expression *value = NULL;
+        if (!parse_expression(parser, &value)) {
+            return false;
+        }
+        if (!append_initializer(items, count, capacity, value,
+                                parser_previous(parser), parser->error)) {
+            expression_free(value);
+            return false;
+        }
+
+        if (!parser_match(parser, TOKEN_COMMA)) {
+            break;
+        }
+
+        if (parser_check(parser, TOKEN_RBRACE)) {
+            break;
+        }
+    }
+
+    return parser_consume(parser, TOKEN_RBRACE, "expected '}'", NULL);
+}
+
+static bool parse_declaration(Parser *parser, Statement **out_statement) {
+    const Token *type_token = NULL;
+    const Token *name_token = NULL;
+    Statement *statement = NULL;
+
+    if (!parser_consume(parser, TOKEN_TYPE, "expected type", &type_token)) {
+        return false;
+    }
+    if (!parser_consume(parser, TOKEN_IDENTIFIER, "expected identifier", &name_token)) {
+        return false;
+    }
+
+    statement = make_statement(STATEMENT_ARRAY_DECLARATION, type_token);
+    if (statement == NULL) {
+        compiler_error_set(parser->error, type_token->line, type_token->column, "out of memory");
+        return false;
+    }
+
+    statement->as.declaration.element_type = compiler_string_duplicate(type_token->lexeme);
+    statement->as.declaration.name = compiler_string_duplicate(name_token->lexeme);
+    if (statement->as.declaration.element_type == NULL || statement->as.declaration.name == NULL) {
+        statement_free(statement);
+        compiler_error_set(parser->error, name_token->line, name_token->column, "out of memory");
+        return false;
+    }
+
+    if (!parser_consume(parser, TOKEN_LBRACKET, "expected '['", NULL)) {
+        statement_free(statement);
+        return false;
+    }
+
+    if (!parser_check(parser, TOKEN_RBRACKET)) {
+        if (!parse_expression(parser, &statement->as.declaration.size)) {
+            statement_free(statement);
+            return false;
+        }
+    }
+
+    if (!parser_consume(parser, TOKEN_RBRACKET, "expected ']'", NULL)) {
+        statement_free(statement);
+        return false;
+    }
+
+    if (parser_match(parser, TOKEN_ASSIGN)) {
+        size_t initializer_capacity = 0;
+        statement->as.declaration.has_initializer = true;
+        if (!parse_initializer(parser,
+                               &statement->as.declaration.initializer,
+                               &statement->as.declaration.initializer_count,
+                               &initializer_capacity)) {
+            statement_free(statement);
+            return false;
+        }
+    }
+
+    if (statement->as.declaration.size == NULL && !statement->as.declaration.has_initializer) {
+        compiler_error_set(parser->error, name_token->line, name_token->column,
+                           "unsized declaration requires an initializer");
+        statement_free(statement);
+        return false;
+    }
+
+    if (!parser_consume(parser, TOKEN_SEMICOLON, "expected ';'", NULL)) {
+        statement_free(statement);
+        return false;
+    }
+
+    *out_statement = statement;
+    return true;
+}
+
+static bool parse_assignment(Parser *parser, Statement **out_statement) {
+    const Token *name_token = NULL;
+    Statement *statement = NULL;
+
+    if (!parser_consume(parser, TOKEN_IDENTIFIER, "expected identifier", &name_token)) {
+        return false;
+    }
+
+    if (parser_match(parser, TOKEN_LBRACKET)) {
+        statement = make_statement(STATEMENT_ELEMENT_ASSIGNMENT, name_token);
+        if (statement == NULL) {
+            compiler_error_set(parser->error, name_token->line, name_token->column, "out of memory");
+            return false;
+        }
+        statement->as.assignment.array_name = compiler_string_duplicate(name_token->lexeme);
+        if (statement->as.assignment.array_name == NULL) {
+            statement_free(statement);
+            compiler_error_set(parser->error, name_token->line, name_token->column, "out of memory");
+            return false;
+        }
+
+        if (!parse_expression(parser, &statement->as.assignment.index)) {
+            statement_free(statement);
+            return false;
+        }
+        if (!parser_consume(parser, TOKEN_RBRACKET, "expected ']'", NULL)) {
+            statement_free(statement);
+            return false;
+        }
+
+        if (!parser_consume(parser, TOKEN_ASSIGN, "expected '='", NULL)) {
+            statement_free(statement);
+            return false;
+        }
+
+        if (!parse_expression(parser, &statement->as.assignment.value)) {
+            statement_free(statement);
+            return false;
+        }
+    } else {
+        statement = make_statement(STATEMENT_SCALAR_ASSIGNMENT, name_token);
+        if (statement == NULL) {
+            compiler_error_set(parser->error, name_token->line, name_token->column, "out of memory");
+            return false;
+        }
+        statement->as.scalar_assignment.name = compiler_string_duplicate(name_token->lexeme);
+        if (statement->as.scalar_assignment.name == NULL) {
+            statement_free(statement);
+            compiler_error_set(parser->error, name_token->line, name_token->column, "out of memory");
+            return false;
+        }
+
+        if (!parser_consume(parser, TOKEN_ASSIGN, "expected '='", NULL)) {
+            statement_free(statement);
+            return false;
+        }
+
+        if (!parse_expression(parser, &statement->as.scalar_assignment.value)) {
+            statement_free(statement);
+            return false;
+        }
+    }
+
+    if (!parser_consume(parser, TOKEN_SEMICOLON, "expected ';'", NULL)) {
+        statement_free(statement);
+        return false;
+    }
+
+    *out_statement = statement;
+    return true;
+}
+
+bool parser_parse(const TokenArray *tokens, Program *program, CompilerError *error) {
+    Parser parser;
+
+    compiler_error_clear(error);
+    program->statements = NULL;
+    program->count = 0;
+    program->capacity = 0;
+
+    parser.tokens = tokens;
+    parser.current = 0;
+    parser.error = error;
+
+    while (!parser_is_at_end(&parser)) {
+        Statement *statement = NULL;
+        const Token *token = parser_peek(&parser);
+
+        if (token->type == TOKEN_TYPE) {
+            if (!parse_declaration(&parser, &statement)) {
+                program_free(program);
+                return false;
+            }
+        } else if (token->type == TOKEN_IDENTIFIER) {
+            if (!parse_assignment(&parser, &statement)) {
+                program_free(program);
+                return false;
+            }
+        } else {
+            compiler_error_set(error, token->line, token->column,
+                               "expected statement, found '%s'", token->lexeme);
+            program_free(program);
+            return false;
+        }
+
+        if (!append_statement(program, statement, error)) {
+            statement_free(statement);
+            program_free(program);
+            return false;
+        }
+    }
+
+    return true;
 }

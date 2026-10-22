@@ -1,7 +1,6 @@
 # Array Declaration Language Grammar
 
-The parser uses the following unambiguous, left-recursion-free grammar. `TYPE`
-is one of `int`, `float`, or `char`.
+`TYPE` is one of `int`, `float`, or `char`.
 
 ```ebnf
 program             -> statement* EOF ;
@@ -22,20 +21,17 @@ primary             -> INTEGER | FLOAT | CHARACTER
                      | "(" expression ")" ;
 ```
 
-The parser adds one syntax constraint: if an array size is omitted, an
-initializer must be present. Type compatibility, declaration lookup, duplicate
-names, initializer length, and index type/range belong to semantic analysis and
-are intentionally not performed by this component.
+Additional parser rule: unsized declarations require an initializer.
 
-## Example derivation
+## Semantic checks
 
-For `int arr[5];`:
-
-```text
-program
-=> statement EOF
-=> arrayDeclaration EOF
-=> TYPE IDENTIFIER "[" expression "]" ";" EOF
-=> int arr "[" INTEGER "]" ";" EOF
-=> int arr[5]; EOF
-```
+The semantic analyzer enforces:
+- array sizes must be positive integer constant expressions
+- declarations are unique within a program
+- identifiers and arrays must be declared before use
+- array indexes must be integer expressions
+- literal integer indexes must be in bounds
+- initializer count cannot exceed declared size
+- assignment and initializer values must follow conversion rules:
+  - allowed: exact match, `int->float`, `char->float`, `char->int`, `int->char`
+  - rejected: `float->int`, `float->char`

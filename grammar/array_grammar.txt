@@ -1,111 +1,40 @@
+Array Declaration Language (Current)
 
-ARRAY DECLARATION COMPILER
-MEMBER 1 - GRAMMAR DESIGNER
-
-1. TERMINAL SYMBOLS
-
+Terminals
+---------
 TYPE        -> int | float | char
-ID          -> Identifier
-INT_LITERAL -> Integer constant
-=           -> Assignment operator
-[ ]         -> Array brackets
-{ }         -> Initializer braces
-;           -> Statement terminator
-+ - * /     -> Arithmetic operators
-( )         -> Parentheses
-,           -> Comma
+IDENTIFIER  -> C-like identifier
+INTEGER     -> integer literal
+FLOAT       -> floating-point literal
+CHARACTER   -> character literal
 
-2. CONTEXT-FREE GRAMMAR (CFG)
+Grammar
+-------
+program             -> statement* EOF
+statement           -> arrayDeclaration | assignment
+arrayDeclaration    -> TYPE IDENTIFIER '[' expression? ']'
+                       ('=' initializer)? ';'
+initializer         -> '{' (expression (',' expression)* ','?)? '}'
+assignment          -> lvalue '=' expression ';'
+lvalue              -> IDENTIFIER ('[' expression ']')?
+expression          -> addition
+addition            -> multiplication (('+'|'-') multiplication)*
+multiplication      -> unary (('*'|'/'|'%') unary)*
+unary               -> ('+'|'-') unary | primary
+primary             -> INTEGER | FLOAT | CHARACTER
+                     | IDENTIFIER ('[' expression ']')?
+                     | '(' expression ')'
 
-Start Symbol: Program
+Parser constraint: if size is omitted (`TYPE name[]`), an initializer is required.
 
-Program -> StatementList
-
-StatementList -> Statement StatementList
-               | epsilon
-
-Statement -> Declaration ;
-           | Assignment ;
-
-Declaration -> Type ID [ INT_LITERAL ] InitializerOpt
-
-Type -> int
-      | float
-      | char
-
-InitializerOpt -> = { InitializerList }
-                | epsilon
-
-InitializerList -> Expression InitializerTail
-
-InitializerTail -> , Expression InitializerTail
-                 | epsilon
-
-Assignment -> LValue = Expression
-
-LValue -> ID
-        | ID [ Expression ]
-
-Expression -> Term ExpressionTail
-
-ExpressionTail -> + Term ExpressionTail
-                | - Term ExpressionTail
-                | epsilon
-
-Term -> Factor TermTail
-
-TermTail -> * Factor TermTail
-          | / Factor TermTail
-          | epsilon
-
-Factor -> ID
-        | INT_LITERAL
-        | ( Expression )
-        | ID [ Expression ]
-
-
-3. SAMPLE VALID INPUTS
-
-int arr[5];
-
-int marks[3] = {10, 20, 30};
-
-arr[2] = 50;
-
-x = arr[2];
-
-int values[4] = {1 + 2, 5, 8, 10};
-
-
-4. GRAMMAR DESIGN
-
-1. StatementList supports multiple statements.
-2. InitializerOpt makes array initialization optional.
-3. InitializerTail supports comma-separated initializer values.
-4. Expression and Term establish operator precedence.
-5. The expression-tail rules avoid left recursion in arithmetic
-   expressions, making them suitable for a predictive parser.
-6. The grammar supports single-dimensional arrays.
-
-
-5. SEMANTIC CHECKS
-
-The semantic analyzer must check:
-
-1. Whether an array is declared before use.
-2. Whether an array index has an integer type.
-3. Whether an index is within the declared bounds.
-4. Whether assigned values match the array element type.
-5. Whether the number of initializer values is compatible
-   with the declared array size.
-6. Whether the array size is a positive integer.
-
-
-6. SCOPE AND LIMITATIONS
-
-The compiler supports a simplified C-like syntax for
-single-dimensional array declarations, initialization,
-indexing, assignments, and arithmetic expressions.
-
-Multidimensional arrays, pointers, functions, and advanced
-C language features are outside the current scope.
+Semantic checks
+---------------
+1. Reject non-positive array sizes.
+2. Reject duplicate declarations.
+3. Reject undeclared identifiers/arrays.
+4. Reject non-integer indexes.
+5. Reject out-of-range literal indexes.
+6. Reject initializer lists larger than declared size.
+7. Enforce assignment compatibility:
+   - allowed: exact match, int->float, char->float, char->int, int->char
+   - rejected: float->int, float->char

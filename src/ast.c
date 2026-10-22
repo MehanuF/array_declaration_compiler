@@ -1,106 +1,101 @@
-/*
- * Array Declaration Compiler
- * Member 3 — Abstract Syntax Tree (implementation)
- *
- * Provides node allocation, child linking, tree printing, and
- * recursive deallocation.
- */
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include "ast.h"
 
-/* ── makeNode ─────────────────────────────────────────────────── */
-ASTNode *makeNode(NodeKind kind, int line, int col) {
-    ASTNode *n = (ASTNode *)calloc(1, sizeof(ASTNode));
-    if (!n) {
-        fprintf(stderr, "Fatal: out of memory\n");
-        exit(1);
+#include <stdlib.h>
+#include <string.h>
+
+void expression_free(Expression *expression) {
+    if (expression == NULL) {
+        return;
     }
-    n->kind        = kind;
-    n->line        = line;
-    n->column      = col;
-    n->numChildren = 0;
-    return n;
-}
 
-/* ── addChild ─────────────────────────────────────────────────── */
-void addChild(ASTNode *parent, ASTNode *child) {
-    if (!parent || !child) return;
-    if (parent->numChildren >= MAX_CHILDREN) {
-        fprintf(stderr, "Fatal: too many children for AST node\n");
-        exit(1);
-    }
-    parent->children[parent->numChildren++] = child;
-}
-
-/* ── freeAST ──────────────────────────────────────────────────── */
-void freeAST(ASTNode *node) {
-    if (!node) return;
-    for (int i = 0; i < node->numChildren; i++)
-        freeAST(node->children[i]);
-    free(node);
-}
-
-/* ── internal: kind → label string ───────────────────────────── */
-static const char *kindLabel(NodeKind k) {
-    switch (k) {
-        case NODE_PROGRAM:      return "PROGRAM";
-        case NODE_DECL:         return "DECL";
-        case NODE_ASSIGN:       return "ASSIGN";
-        case NODE_INIT_LIST:    return "INIT_LIST";
-        case NODE_BINOP:        return "BINOP";
-        case NODE_ID:           return "ID";
-        case NODE_INT_LIT:      return "INT_LIT";
-        case NODE_ARRAY_ACCESS: return "ARRAY_ACCESS";
-        default:                return "UNKNOWN";
-    }
-}
-
-/* ── printAST ─────────────────────────────────────────────────── */
-void printAST(const ASTNode *node, int depth) {
-    if (!node) return;
-
-    /* Indentation: 4 spaces per level, with a tree connector */
-    for (int i = 0; i < depth; i++) {
-        if (i == depth - 1)
-            printf("  |-- ");
-        else
-            printf("  |   ");
-    }
-    if (depth == 0) printf("  ");
-
-    /* Node label */
-    printf("[%s]", kindLabel(node->kind));
-
-    /* Extra payload */
-    switch (node->kind) {
-        case NODE_DECL:
-            printf("  type=%s  name=%s  size=%d",
-                   node->typeName, node->name, node->intVal);
+    switch (expression->kind) {
+        case EXPR_IDENTIFIER:
+            free(expression->as.identifier);
             break;
-        case NODE_ID:
-            printf("  \"%s\"", node->name);
+        case EXPR_ARRAY_ACCESS:
+            free(expression->as.array_access.array_name);
+            expression_free(expression->as.array_access.index);
             break;
-        case NODE_INT_LIT:
-            printf("  %d", node->intVal);
+        case EXPR_UNARY:
+            expression_free(expression->as.unary.operand);
             break;
-        case NODE_BINOP:
-            printf("  op='%s'", node->name);
+        case EXPR_BINARY:
+            expression_free(expression->as.binary.left);
+            expression_free(expression->as.binary.right);
             break;
-        case NODE_ARRAY_ACCESS:
-            printf("  name=%s", node->name);
-            break;
-        case NODE_ASSIGN:
-        case NODE_INIT_LIST:
-        case NODE_PROGRAM:
         default:
             break;
     }
 
-    printf("  (line %d, col %d)\n", node->line, node->column);
+    free(expression);
+}
 
-    for (int i = 0; i < node->numChildren; i++)
-        printAST(node->children[i], depth + 1);
+void statement_free(Statement *statement) {
+    size_t i;
+    if (statement == NULL) {
+        return;
+    }
+
+    switch (statement->kind) {
+        case STATEMENT_ARRAY_DECLARATION:
+            free(statement->as.declaration.element_type);
+            free(statement->as.declaration.name);
+            expression_free(statement->as.declaration.size);
+            for (i = 0; i < statement->as.declaration.initializer_count; ++i) {
+                expression_free(statement->as.declaration.initializer[i]);
+            }
+            free(statement->as.declaration.initializer);
+            break;
+        case STATEMENT_ELEMENT_ASSIGNMENT:
+            free(statement->as.assignment.array_name);
+            expression_free(statement->as.assignment.index);
+            expression_free(statement->as.assignment.value);
+            break;
+        case STATEMENT_SCALAR_ASSIGNMENT:
+            free(statement->as.scalar_assignment.name);
+            expression_free(statement->as.scalar_assignment.value);
+            break;
+    }
+
+    free(statement);
+}
+
+void program_free(Program *program) {
+    size_t i;
+    if (program == NULL) {
+        return;
+    }
+
+    for (i = 0; i < program->count; ++i) {
+        statement_free(program->statements[i]);
+    }
+    free(program->statements);
+
+    program->statements = NULL;
+    program->count = 0;
+    program->capacity = 0;
+}
+
+void ast_print_json(const Program *program, FILE *output) {
+    size_t i;
+    if (program == NULL || output == NULL) {
+        return;
+    }
+
+    fprintf(output, "{\n  \"statementCount\": %zu,\n  \"statements\": [\n", program->count);
+    for (i = 0; i < program->count; ++i) {
+        const Statement *statement = program->statements[i];
+        const char *kind = statement->kind == STATEMENT_ARRAY_DECLARATION
+                               ? "array_declaration"
+                               : (statement->kind == STATEMENT_ELEMENT_ASSIGNMENT
+                                      ? "element_assignment"
+                                      : "scalar_assignment");
+        fprintf(output,
+                "    {\"kind\": \"%s\", \"line\": %d, \"column\": %d}%s\n",
+                kind,
+                statement->line,
+                statement->column,
+                (i + 1 == program->count) ? "" : ",");
+    }
+    fprintf(output, "  ]\n}\n");
 }
