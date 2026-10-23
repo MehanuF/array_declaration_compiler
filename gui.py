@@ -461,58 +461,93 @@ class CompilerGUI(tk.Tk):
             if in_section:
                 rows.append(line)
 
-        # also show stderr errors
         err_lines = [l for l in stderr.splitlines() if l.strip()] if stderr else []
 
-        self._write(w, "\n  Semantic Analysis\n", "heading")
-        self._write(w, "  " + "─" * 54 + "\n", "dim")
-
-        # stdout rows (phase banner content — result line, failed count)
+        # ── Symbol Table ──
+        sym_header_seen = False
+        sym_rows = []
+        status_line = ""
         for row in rows:
-            if "OK" in row or "no errors" in row.lower():
-                self._write(w, "  " + row.strip() + "\n", "ok")
-            elif "FAILED" in row or "error(s)" in row.lower():
-                self._write(w, "  " + row.strip() + "\n", "error")
-            elif row.strip():
-                self._write(w, "  " + row.strip() + "\n")
+            stripped = row.strip()
+            if "Symbol Table" in stripped:
+                sym_header_seen = True
+                continue
+            if sym_header_seen and (stripped.startswith("Name") or
+                                    stripped.startswith("----")):
+                continue   # skip header/divider rows
+            if sym_header_seen and stripped and not stripped.startswith("Semantic") \
+                    and not stripped.startswith("Result"):
+                sym_rows.append(stripped)
+            if "Semantic analysis" in stripped:
+                status_line = stripped
+            # stop collecting sym rows once we hit status
+            if "Semantic analysis" in stripped:
+                sym_header_seen = False
 
-        # stderr semantic error details (only when rc == 2)
+        self._write(w, "\n  Symbol Table\n", "heading")
+        self._write(w, "  " + "-" * 54 + "\n", "dim")
+        if sym_rows:
+            self._write(w, f"  {'Name':<20} {'Type':<8} {'Size':<6} Declared\n", "dim")
+            self._write(w, "  " + "-" * 54 + "\n", "dim")
+            for sr in sym_rows:
+                # parse:  marks                int      3      line 1
+                parts = sr.split()
+                if len(parts) >= 4:
+                    name  = parts[0]
+                    typ   = parts[1]
+                    size  = parts[2]
+                    decl  = " ".join(parts[3:])
+                    self._write(w, f"  ")
+                    self._write(w, f"{name:<20}", "lexeme")
+                    self._write(w, f"{typ:<8}",   "token")
+                    self._write(w, f"{size:<6}",   "ast_val")
+                    self._write(w, f"{decl}\n",    "loc")
+                else:
+                    self._write(w, "  " + sr + "\n", "dim")
+        else:
+            self._write(w, "  (no arrays declared)\n", "dim")
+
+        # ── Status line ──
+        self._write(w, "\n  Result\n", "heading")
+        self._write(w, "  " + "-" * 54 + "\n", "dim")
+        if status_line:
+            tag = "ok" if "OK" in status_line else "error"
+            self._write(w, "  " + status_line + "\n", tag)
+
+        # ── Semantic error details from stderr ──
         if rc == 2 and err_lines:
-            self._write(w, "\n  ❌  Error Details\n", "error")
-            self._write(w, "  " + "─" * 54 + "\n", "dim")
+            self._write(w, "\n  Error Details\n", "error")
+            self._write(w, "  " + "-" * 54 + "\n", "dim")
             for e in err_lines:
                 m = re.search(r'(\[line \d+, col \d+\])', e)
                 if m:
-                    before = e[:m.start()]
-                    loc    = m.group(1)
-                    after  = e[m.end():]
-                    self._write(w, "  " + before, "error")
-                    self._write(w, loc,            "lexeme")
-                    self._write(w, after + "\n",   "error")
+                    self._write(w, "  " + e[:m.start()], "error")
+                    self._write(w, m.group(1),             "lexeme")
+                    self._write(w, e[m.end():] + "\n",    "error")
                 else:
                     self._write(w, "  " + e + "\n", "error")
 
+        # ── Verdict ──
         self._write(w, "\n")
-
-        # big verdict
         if rc == 0:
-            self._write(w, "\n  ✔  ACCEPTED\n", "ok")
-        else:
-            label = "Syntax Error" if rc == 1 else "Semantic Error" if rc == 2 else "Error"
-            self._write(w, f"\n  ✘  REJECTED  ({label})\n", "error")
+            self._write(w, "  ✔  ACCEPTED\n", "ok")
+        elif rc == 2:
+            self._write(w, "  ✘  REJECTED  (Semantic Error)\n", "error")
+        elif rc == 1:
+            self._write(w, "  ✘  REJECTED  (Syntax Error — fix Phase 2 first)\n", "error")
 
-        # symbol table hint
+        # ── Rules checklist ──
         self._write(w, "\n  Semantic Rules Checked:\n", "dim")
         rules = [
             "1. Array declared before use",
             "2. Index must be integer type",
             "3. Literal index within bounds",
             "4. Initializer / assignment type compatibility",
-            "5. Initializer count ≤ array size",
+            "5. Initializer count <= array size",
             "6. Array size must be positive",
         ]
         for r in rules:
-            self._write(w, f"    • {r}\n", "rule")
+            self._write(w, f"    * {r}\n", "rule")
 
         w.see("1.0")
 

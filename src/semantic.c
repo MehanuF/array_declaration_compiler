@@ -305,6 +305,23 @@ static void walkAST(const ASTNode *node,
     }
 }
 
+/* ── Print symbol table ───────────────────────────────────────── */
+static void printSymbolTable(const SymbolTable *st) {
+    printf("  Symbol Table:\n");
+    printf("  %-20s %-8s %-6s %s\n", "Name", "Type", "Size", "Declared");
+    printf("  %-20s %-8s %-6s %s\n",
+           "--------------------", "--------", "------", "--------");
+    if (st->count == 0) {
+        printf("  (empty)\n");
+        return;
+    }
+    for (int i = 0; i < st->count; i++) {
+        const Symbol *s = &st->entries[i];
+        printf("  %-20s %-8s %-6d line %d\n",
+               s->name, typeToStr(s->elemType), s->size, s->declLine);
+    }
+}
+
 /* ── Public entry point ───────────────────────────────────────── */
 int analyzeAST(const ASTNode *root) {
     SymbolTable st;
@@ -312,5 +329,11 @@ int analyzeAST(const ASTNode *root) {
 
     int errorCount = 0;
     walkAST(root, &st, &errorCount);
+
+    /* Print symbol table */
+    printf("\n");
+    printSymbolTable(&st);
+
     return errorCount;
 }
+
