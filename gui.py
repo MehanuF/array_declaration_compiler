@@ -312,7 +312,7 @@ class CompilerGUI(tk.Tk):
 
         # ── parse sections ──
         self._render_tokens(stdout)
-        self._render_ast(stdout)
+        self._render_ast(stdout, stderr, rc)
         self._render_semantics(stdout, stderr, rc)
 
         # ── status bar ──
@@ -368,7 +368,7 @@ class CompilerGUI(tk.Tk):
         w.see("1.0")
 
     # ── Phase 2 — Parse Tree ──────────────────────────────────
-    def _render_ast(self, stdout):
+    def _render_ast(self, stdout, stderr, rc):
         w = self.ast_out
         w.config(state="normal"); w.delete("1.0", "end"); w.config(state="disabled")
 
@@ -383,16 +383,39 @@ class CompilerGUI(tk.Tk):
             if in_section:
                 rows.append(line)
 
-        if not rows:
-            self._write(w, "No AST output.\n", "dim")
-            return
-
         self._write(w, "\n  Syntax Analyzer — Parse Tree (AST)\n", "heading")
         self._write(w, "  " + "─" * 54 + "\n", "dim")
 
+        # ── Syntax error: show the error messages from stderr prominently ──
+        if rc == 1:
+            err_lines = [l for l in (stderr or "").splitlines() if l.strip()]
+            if err_lines:
+                self._write(w, "\n  ❌  Syntax Error(s) Found\n", "error")
+                self._write(w, "  " + "─" * 54 + "\n", "dim")
+                for e in err_lines:
+                    # colour the [line X, col Y] part differently
+                    m = re.search(r'(\[line \d+, col \d+\])', e)
+                    if m:
+                        before = e[:m.start()]
+                        loc    = m.group(1)
+                        after  = e[m.end():]
+                        self._write(w, "  " + before, "error")
+                        self._write(w, loc,            "lexeme")
+                        self._write(w, after + "\n",   "error")
+                    else:
+                        self._write(w, "  " + e + "\n", "error")
+            self._write(w, "\n  Parse tree not built (syntax error must be fixed first).\n", "dim")
+            self._write(w, "\n  ✘  REJECTED\n", "error")
+            w.see("1.0")
+            return
+
+        if not rows:
+            self._write(w, "\n  No parse tree output.\n", "dim")
+            return
+
+        self._write(w, "\n")
+
         node_re = re.compile(r'(\[(\w+)\])(.*)')
-        meta_re = re.compile(r'(\(line \d+.*?\))')
-        val_re  = re.compile(r'(type=\S+|name=\S+|size=\S+|op=\S+|\d+)')
 
         for row in rows:
             if not row.strip():
