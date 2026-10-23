@@ -467,19 +467,30 @@ class CompilerGUI(tk.Tk):
         self._write(w, "\n  Semantic Analysis\n", "heading")
         self._write(w, "  " + "─" * 54 + "\n", "dim")
 
+        # stdout rows (phase banner content — result line, failed count)
         for row in rows:
             if "OK" in row or "no errors" in row.lower():
                 self._write(w, "  " + row.strip() + "\n", "ok")
-            elif "Error" in row or "error" in row:
+            elif "FAILED" in row or "error(s)" in row.lower():
                 self._write(w, "  " + row.strip() + "\n", "error")
             elif row.strip():
                 self._write(w, "  " + row.strip() + "\n")
 
-        if err_lines:
-            self._write(w, "\n  Errors / Warnings\n", "heading")
+        # stderr semantic error details (only when rc == 2)
+        if rc == 2 and err_lines:
+            self._write(w, "\n  ❌  Error Details\n", "error")
             self._write(w, "  " + "─" * 54 + "\n", "dim")
             for e in err_lines:
-                self._write(w, "  " + e + "\n", "error")
+                m = re.search(r'(\[line \d+, col \d+\])', e)
+                if m:
+                    before = e[:m.start()]
+                    loc    = m.group(1)
+                    after  = e[m.end():]
+                    self._write(w, "  " + before, "error")
+                    self._write(w, loc,            "lexeme")
+                    self._write(w, after + "\n",   "error")
+                else:
+                    self._write(w, "  " + e + "\n", "error")
 
         self._write(w, "\n")
 
