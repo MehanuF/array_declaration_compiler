@@ -11,3 +11,5 @@ Thumbs.db
 *~
 .vscode/
 .idea/
+*.pyc
+__pycache__/
