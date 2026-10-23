@@ -84,3 +84,22 @@ run: $(TARGET)
 .PHONY: clean
 clean:
 	rm -f $(OBJS) $(TARGET)
+	rm -f lex_yacc/lex.yy.c lex_yacc/parser.tab.c lex_yacc/parser.tab.h
+	rm -f array_compiler_ly
+
+# ── Lex / YACC version ─────────────────────────────────────────
+# Requires: flex and bison
+# Usage:    make lex-yacc
+#           ./array_compiler_ly tests/inputs/v4.c
+.PHONY: lex-yacc
+lex-yacc:
+	bison -d -o lex_yacc/parser.tab.c lex_yacc/parser.y
+	flex  -o lex_yacc/lex.yy.c         lex_yacc/lexer.l
+	$(CC) -Wall -g \
+	    lex_yacc/parser.tab.c \
+	    lex_yacc/lex.yy.c \
+	    -Ilex_yacc \
+	    -o array_compiler_ly
+	@echo ""
+	@echo "Built: array_compiler_ly  (Lex + YACC version)"
+	@echo "Run:   ./array_compiler_ly <file.c>"

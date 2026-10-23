@@ -13,3 +13,9 @@ Thumbs.db
 .idea/
 *.pyc
 __pycache__/
+
+# Lex/YACC generated files
+lex_yacc/lex.yy.c
+lex_yacc/parser.tab.c
+lex_yacc/parser.tab.h
+array_compiler_ly
