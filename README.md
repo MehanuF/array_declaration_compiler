@@ -11,13 +11,30 @@ A compiler front end for a simplified C-like language supporting single-dimensio
 - Integer literals only (no floating-point or character literals in source code)
 - Semantic checks: undeclared arrays, bounds checking, type checking, initializer count
 
-## Build & Run
+## How to Run
 
+### Option 1 — GUI (Recommended for demo)
 ```bash
-make                              # compile
-./array_compiler tests/inputs/v4.c  # run on a file
-make test                         # run all tests with exit code verification
-make clean                        # remove build artifacts
+make              # build the compiler first
+python3 gui.py    # launch the visual interface
+```
+Type code in the left panel → click **▶ Compile** → see tokens, parse tree, and semantic results in colour-coded tabs on the right.
+
+### Option 2 — Command Line
+```bash
+make                                    # build
+./array_compiler tests/inputs/v4.c     # run on a file
+echo "int arr[5];" | ./array_compiler  # run from stdin
+```
+
+### Run all tests (automated, checks exit codes)
+```bash
+make test
+```
+
+### Clean build
+```bash
+make clean
 ```
 
 ## How It Works
