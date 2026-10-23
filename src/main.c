@@ -27,7 +27,7 @@
 static void printBanner(void) {
     printf("╔══════════════════════════════════════════════════════╗\n");
     printf("║         ARRAY DECLARATION COMPILER  v1.0            ║\n");
-    printf("║    Lexer → Parser → AST → Semantic Analyzer         ║\n");
+    printf("║  Lexer → Syntax Analyzer → AST → Semantic Analyzer  ║\n");
     printf("╚══════════════════════════════════════════════════════╝\n\n");
 }
 
@@ -113,9 +113,9 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    /* ── 3. Parsing ──────────────────────────────────────────── */
+    /* ── 3. Syntax Analysis (Parsing) ────────────────────────── */
     printf("┌─────────────────────────────────────────────────────┐\n");
-    printf("│  PHASE 2 — PARSING (Parse Tree / AST)               │\n");
+    printf("│  PHASE 2 — SYNTAX ANALYZER (Parse Tree / AST)       │\n");
     printf("└─────────────────────────────────────────────────────┘\n");
 
     ASTNode *root = parse(tokens, numTokens);

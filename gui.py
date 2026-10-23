@@ -135,7 +135,7 @@ class CompilerGUI(tk.Tk):
         nb.pack(fill="both", expand=True)
 
         self.token_out  = self._make_output_tab(nb, "Phase 1 — Tokens")
-        self.ast_out    = self._make_output_tab(nb, "Phase 2 — Parse Tree")
+        self.ast_out    = self._make_output_tab(nb, "Phase 2 — Syntax Analyzer")
         self.sem_out    = self._make_output_tab(nb, "Phase 3 — Semantics")
         self.raw_out    = self._make_output_tab(nb, "Raw Output")
 
@@ -387,7 +387,7 @@ class CompilerGUI(tk.Tk):
             self._write(w, "No AST output.\n", "dim")
             return
 
-        self._write(w, "\n  Parse Tree (AST)\n", "heading")
+        self._write(w, "\n  Syntax Analyzer — Parse Tree (AST)\n", "heading")
         self._write(w, "  " + "─" * 54 + "\n", "dim")
 
         node_re = re.compile(r'(\[(\w+)\])(.*)')
