@@ -67,14 +67,25 @@ def get_network_ip():
 def ensure_binary():
     """Verify presence of compiler binary; compile using make if necessary."""
     if BINARY.exists():
+        try:
+            BINARY.chmod(0o755)
+        except Exception:
+            pass
         return True, "Compiler binary ready."
     try:
         res = subprocess.run(["make"], cwd=str(ROOT), capture_output=True, text=True)
         if res.returncode == 0 and BINARY.exists():
+            try:
+                BINARY.chmod(0o755)
+            except Exception:
+                pass
             return True, "Compiler binary built successfully via Makefile."
         return False, f"Build failure:\n{res.stdout}\n{res.stderr}"
     except Exception as e:
         return False, f"Makefile invocation failed: {e}"
+
+# Ensure binary exists on startup (especially for cloud containers)
+ensure_binary()
 
 def compile_source(source_text: str):
     """Execute compiler binary against supplied source code."""
