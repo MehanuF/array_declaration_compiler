@@ -62,7 +62,34 @@ cd array_declaration_compiler
 make
 ```
 
-### Step 2 — Launch the GUI *(recommended for demo)*
+### Step 2 — Launch the Web GUI (Streamlit — Recommended)
+
+Get an interactive web interface with shareable links:
+
+```bash
+make web
+# or directly:
+./run_web.sh
+# or:
+streamlit run app.py
+```
+
+- **Local Link:** `http://localhost:8501`
+- **Network Link (LAN):** Accessible from any device on your local Wi-Fi / network.
+- **Public Link (Online):** Run `./run_web.sh --share` or `make web-share` to generate a live public HTTPS URL with `localtunnel`.
+
+Features included in the Web GUI:
+- **Interactive Graphviz Parse Tree (AST)** visualization and text hierarchy.
+- **Phase 1 Token Stream table** with search, filters, and count metrics.
+- **Phase 3 Semantic Analysis** with Symbol Table & automated 6-rule verification checklist.
+- **Automated Test Suite Runner** to execute and verify all 21 test files in the browser.
+- **Presets & Test Case Loader** to easily demo all edge cases with one click.
+
+---
+
+### Step 3 — Desktop GUI (Alternative)
+
+If you prefer the Tkinter desktop GUI:
 
 ```bash
 python3 gui.py

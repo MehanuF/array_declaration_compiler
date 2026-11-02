@@ -103,3 +103,12 @@ lex-yacc:
 	@echo ""
 	@echo "Built: array_compiler_ly  (Lex + YACC version)"
 	@echo "Run:   ./array_compiler_ly <file.c>"
+
+# ── Web GUI (Streamlit) ────────────────────────────────────────
+.PHONY: web web-share
+web: $(TARGET)
+	./run_web.sh
+
+web-share: $(TARGET)
+	./run_web.sh --share
+
